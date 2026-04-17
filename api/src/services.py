@@ -2,17 +2,28 @@ from celery.result import AsyncResult
 from src.cache import PromptCache
 from src.llm import LLMClient
 from src.models import ResultResponse
+from src.storage import GenerationLogStore
+from time import perf_counter
 
 
 class GenerationService:
-    def __init__(self, llm_client: LLMClient, prompt_cache: PromptCache | None = None) -> None:
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        prompt_cache: PromptCache | None = None,
+        log_store: GenerationLogStore | None = None,
+    ) -> None:
         self._llm_client = llm_client
         self._prompt_cache = prompt_cache
+        self._log_store = log_store
 
     def generate_sync(self, prompt: str) -> dict:
+        started_at = perf_counter()
+
         if self._prompt_cache:
             cached = self._prompt_cache.get(prompt)
             if cached is not None:
+                self._log_generation(prompt, cached, started_at)
                 return cached
 
         result = self._llm_client.generate(prompt)
@@ -20,7 +31,16 @@ class GenerationService:
         if self._prompt_cache:
             self._prompt_cache.set(prompt, result)
 
+        self._log_generation(prompt, result, started_at)
+
         return result
+
+    def _log_generation(self, prompt: str, response: dict, started_at: float) -> None:
+        if not self._log_store:
+            return
+
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        self._log_store.save(prompt=prompt, response=response, latency_ms=latency_ms)
 
 
 class TaskService:

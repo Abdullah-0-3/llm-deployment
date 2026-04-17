@@ -5,3 +5,4 @@ pydantic
 prometheus-fastapi-instrumentator
 celery
 redis
+psycopg[binary]

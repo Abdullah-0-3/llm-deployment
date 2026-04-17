@@ -1,4 +1,15 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=llmops
+      - POSTGRES_USER=llmops
+      - POSTGRES_PASSWORD=llmops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -16,35 +27,48 @@ services:
   api:
     build: ./api
     container_name: fastapi
+    restart: unless-stopped
     depends_on:
+      - postgres
       - redis
       - ollama
     environment:
       - OLLAMA_URL=${OLLAMA_URL}
       - REDIS_URL=${REDIS_URL}
+      - POSTGRES_URL=${POSTGRES_URL}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS}
       - CACHE_PREFIX=${CACHE_PREFIX}
       - API_KEY=${API_KEY}
       - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   worker:
     build: ./api
     container_name: celery-worker
     command: celery -A src.celery_app.celery worker --loglevel=info --pool=solo
     depends_on:
+      - postgres
       - redis
       - ollama
     environment:
       - OLLAMA_URL=${OLLAMA_URL}
       - REDIS_URL=${REDIS_URL}
+      - POSTGRES_URL=${POSTGRES_URL}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS}
       - CACHE_PREFIX=${CACHE_PREFIX}
 
   nginx:
     image: nginx:alpine
     container_name: reverse-proxy
+    restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "80:80"
     volumes:
@@ -74,5 +98,6 @@ services:
       - grafana_data:/var/lib/grafana
 
 volumes:
+  postgres_data:
   ollama_data:
   grafana_data:

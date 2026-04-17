@@ -8,6 +8,7 @@ from src.security import APIKeyAuthenticator
 from src.rate_limit import InMemoryRateLimiter
 from src.llm import OllamaLLMClient
 from src.services import GenerationService, TaskService
+from src.storage import PostgresLogStore
 from src.celery_app import celery
 from src.tasks import generate_with_ollama
 
@@ -22,9 +23,11 @@ class AppFactory:
             ttl_seconds=self.config.cache_ttl_seconds,
             key_prefix=self.config.cache_prefix,
         )
+        self.log_store = PostgresLogStore(self.config.postgres_url)
         self.generation_service = GenerationService(
             OllamaLLMClient(ollama_url=self.config.ollama_url, model=self.config.model),
             prompt_cache=self.prompt_cache,
+            log_store=self.log_store,
         )
         self.task_service = TaskService(celery)
 

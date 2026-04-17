@@ -11,6 +11,7 @@ class AppConfig(BaseConfig):
     def __init__(self) -> None:
         self.ollama_url = self.read_env("OLLAMA_URL", "http://localhost:11434") or "http://localhost:11434"
         self.redis_url = self.read_env("REDIS_URL", "redis://redis:6379/0") or "redis://redis:6379/0"
+        self.postgres_url = self.read_env("POSTGRES_URL")
         self.api_key = self.read_env("API_KEY")
         self.model = self.read_env("OLLAMA_MODEL", "tinyllama") or "tinyllama"
         self.rate_limit_per_minute = self._read_rate_limit_per_minute()
