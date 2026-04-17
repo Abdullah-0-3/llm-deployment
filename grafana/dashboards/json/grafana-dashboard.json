@@ -1,0 +1,388 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "API Metrics",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "API Request Rate",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_request_duration_seconds_count{path!=\"/metrics\"}[5m]))",
+          "legendFormat": "requests/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "stat",
+      "title": "API Error Rate",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_error_total[5m]))",
+          "legendFormat": "errors/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "timeseries",
+      "title": "API p95 Latency",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{path!=\"/metrics\"}[5m])) by (le))",
+          "legendFormat": "p95 latency",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "decimals": 3 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Slow Requests",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_slow_request_total[5m]))",
+          "legendFormat": "slow req/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Request Size p95",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_size_bytes_bucket[5m])) by (le))",
+          "legendFormat": "request size p95",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "decimals": 0 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Response Size p95",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_response_size_bytes_bucket[5m])) by (le))",
+          "legendFormat": "response size p95",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "decimals": 0 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Model Metrics",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 }
+    },
+    {
+      "type": "stat",
+      "title": "Cache Hit Ratio",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_cache_hit_total[5m])) / clamp_min((sum(rate(llm_cache_hit_total[5m])) + sum(rate(llm_cache_miss_total[5m]))), 1)",
+          "legendFormat": "cache hit ratio",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "decimals": 2 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM Generation Rate by Status",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_generation_total[5m])) by (status)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM Generation Latency p95",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(llm_generation_duration_seconds_bucket[5m])) by (le, source))",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "decimals": 3 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache Hits vs Misses",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_cache_hit_total[5m]))",
+          "legendFormat": "hits",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(llm_cache_miss_total[5m]))",
+          "legendFormat": "misses",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Worker Metrics",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }
+    },
+    {
+      "type": "stat",
+      "title": "Worker Throughput",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(rate(celery_task_total[5m]))",
+          "legendFormat": "tasks/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "timeseries",
+      "title": "Worker Success vs Failure",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(rate(celery_task_total[5m])) by (status)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Worker Task Duration p95",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(celery_task_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95 duration",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "decimals": 3 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Async API Traffic",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_request_duration_seconds_count{path=~\"/submit|/result/.+\"}[5m]))",
+          "legendFormat": "async requests/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Database Metrics",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 }
+    },
+    {
+      "type": "stat",
+      "title": "Database Records Total",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "expr": "db_records_total",
+          "legendFormat": "records",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "timeseries",
+      "title": "DB Writes Rate",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 32 },
+      "targets": [
+        {
+          "expr": "sum(rate(db_records_written_total[5m]))",
+          "legendFormat": "writes/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DB Records Growth",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 32 },
+      "targets": [
+        {
+          "expr": "db_records_total",
+          "legendFormat": "records total",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DB Writes vs Successful Generations",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 32 },
+      "targets": [
+        {
+          "expr": "sum(rate(db_records_written_total[5m]))",
+          "legendFormat": "db writes",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(llm_generation_total{status=\"success\"}[5m]))",
+          "legendFormat": "llm success",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2 },
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "llmops",
+    "fastapi",
+    "celery",
+    "postgres",
+    "redis"
+  ],
+  "templating": { "list": [] },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "LLM Ops Overview",
+  "uid": "llm-ops-overview",
+  "version": 1,
+  "weekStart": ""
+}

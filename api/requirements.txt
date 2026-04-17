@@ -3,6 +3,7 @@ uvicorn
 requests
 pydantic
 prometheus-fastapi-instrumentator
+prometheus-client
 celery
 redis
 psycopg[binary]

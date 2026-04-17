@@ -3,6 +3,7 @@ from src.cache import PromptCache
 from src.llm import LLMClient
 from src.models import ResultResponse
 from src.storage import GenerationLogStore
+from src.observability import app_metrics
 from time import perf_counter
 
 
@@ -17,20 +18,30 @@ class GenerationService:
         self._prompt_cache = prompt_cache
         self._log_store = log_store
 
-    def generate_sync(self, prompt: str) -> dict:
+    def generate_sync(self, prompt: str, source: str = "sync") -> dict:
         started_at = perf_counter()
 
         if self._prompt_cache:
             cached = self._prompt_cache.get(prompt)
             if cached is not None:
+                app_metrics.record_llm_cache_hit(source)
+                app_metrics.record_llm_generation(source, "cached", perf_counter() - started_at)
                 self._log_generation(prompt, cached, started_at)
                 return cached
 
-        result = self._llm_client.generate(prompt)
+        if self._prompt_cache:
+            app_metrics.record_llm_cache_miss(source)
+
+        try:
+            result = self._llm_client.generate(prompt)
+        except RuntimeError:
+            app_metrics.record_llm_generation(source, "error", perf_counter() - started_at)
+            raise
 
         if self._prompt_cache:
             self._prompt_cache.set(prompt, result)
 
+        app_metrics.record_llm_generation(source, "success", perf_counter() - started_at)
         self._log_generation(prompt, result, started_at)
 
         return result

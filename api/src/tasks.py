@@ -4,10 +4,16 @@ from src.llm import OllamaLLMClient
 from src.celery_app import celery
 from src.services import GenerationService
 from src.storage import PostgresLogStore
+from src.worker_metrics import worker_metrics
+from time import perf_counter
+
+
+worker_metrics.start()
 
 
 @celery.task(name="tasks.generate_with_ollama")
 def generate_with_ollama(prompt: str) -> dict:
+    started_at = perf_counter()
     config = AppConfig()
     client = OllamaLLMClient(ollama_url=config.ollama_url, model=config.model)
     cache = RedisPromptCache(
@@ -17,4 +23,11 @@ def generate_with_ollama(prompt: str) -> dict:
     )
     log_store = PostgresLogStore(config.postgres_url)
     service = GenerationService(llm_client=client, prompt_cache=cache, log_store=log_store)
-    return service.generate_sync(prompt)
+    try:
+        result = service.generate_sync(prompt, source="async")
+    except Exception:
+        worker_metrics.record("tasks.generate_with_ollama", "failure", started_at)
+        raise
+
+    worker_metrics.record("tasks.generate_with_ollama", "success", started_at)
+    return result

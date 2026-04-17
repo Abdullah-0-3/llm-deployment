@@ -1,0 +1,102 @@
+from prometheus_client import Counter, Gauge, Histogram
+
+
+class AppMetrics:
+    def __init__(self) -> None:
+        self.http_request_duration_seconds = Histogram(
+            "http_request_duration_seconds",
+            "HTTP request duration in seconds",
+            ["method", "path"],
+        )
+        self.http_error_total = Counter(
+            "http_error_total",
+            "Total HTTP error responses",
+            ["method", "path", "status_code"],
+        )
+        self.http_slow_request_total = Counter(
+            "http_slow_request_total",
+            "Total number of slow HTTP requests",
+            ["method", "path"],
+        )
+        self.http_request_size_bytes = Histogram(
+            "http_request_size_bytes",
+            "HTTP request size in bytes",
+            ["method", "path"],
+        )
+        self.http_response_size_bytes = Histogram(
+            "http_response_size_bytes",
+            "HTTP response size in bytes",
+            ["method", "path"],
+        )
+        self.db_records_written_total = Counter(
+            "db_records_written_total",
+            "Total number of generation records written to database",
+        )
+        self.db_records_total = Gauge(
+            "db_records_total",
+            "Current number of generation records in database",
+        )
+        self.llm_generation_total = Counter(
+            "llm_generation_total",
+            "Total number of LLM generation attempts",
+            ["source", "status"],
+        )
+        self.llm_cache_hit_total = Counter(
+            "llm_cache_hit_total",
+            "Total number of LLM cache hits",
+            ["source"],
+        )
+        self.llm_cache_miss_total = Counter(
+            "llm_cache_miss_total",
+            "Total number of LLM cache misses",
+            ["source"],
+        )
+        self.llm_generation_duration_seconds = Histogram(
+            "llm_generation_duration_seconds",
+            "LLM generation duration in seconds",
+            ["source"],
+        )
+
+    def observe_http(
+        self,
+        method: str,
+        path: str,
+        status_code: int,
+        duration_seconds: float,
+        request_size_bytes: int,
+        response_size_bytes: int,
+        slow_threshold_seconds: float,
+    ) -> None:
+        self.http_request_duration_seconds.labels(method=method, path=path).observe(duration_seconds)
+        self.http_request_size_bytes.labels(method=method, path=path).observe(max(request_size_bytes, 0))
+        self.http_response_size_bytes.labels(method=method, path=path).observe(max(response_size_bytes, 0))
+
+        if status_code >= 400:
+            self.http_error_total.labels(
+                method=method,
+                path=path,
+                status_code=str(status_code),
+            ).inc()
+
+        if duration_seconds >= slow_threshold_seconds:
+            self.http_slow_request_total.labels(method=method, path=path).inc()
+
+    def record_db_write(self) -> None:
+        self.db_records_written_total.inc()
+        self.db_records_total.inc()
+
+    def set_db_records(self, count: int) -> None:
+        self.db_records_total.set(max(count, 0))
+
+    def record_llm_cache_hit(self, source: str) -> None:
+        self.llm_cache_hit_total.labels(source=source).inc()
+
+    def record_llm_cache_miss(self, source: str) -> None:
+        self.llm_cache_miss_total.labels(source=source).inc()
+
+    def record_llm_generation(self, source: str, status: str, duration_seconds: float) -> None:
+        self.llm_generation_total.labels(source=source, status=status).inc()
+        self.llm_generation_duration_seconds.labels(source=source).observe(max(duration_seconds, 0.0))
+
+
+app_metrics = AppMetrics()

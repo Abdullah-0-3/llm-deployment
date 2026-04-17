@@ -1,8 +1,10 @@
 import logging
+from time import perf_counter
 from fastapi import Depends, FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from src.config import AppConfig
 from src.cache import RedisPromptCache
+from src.observability import app_metrics
 from src.models import PromptRequest, ResultResponse, SubmitResponse
 from src.security import APIKeyAuthenticator
 from src.rate_limit import InMemoryRateLimiter
@@ -24,6 +26,7 @@ class AppFactory:
             key_prefix=self.config.cache_prefix,
         )
         self.log_store = PostgresLogStore(self.config.postgres_url)
+        self.log_store.initialize()
         self.generation_service = GenerationService(
             OllamaLLMClient(ollama_url=self.config.ollama_url, model=self.config.model),
             prompt_cache=self.prompt_cache,
@@ -40,6 +43,49 @@ class AppFactory:
             version="1.0.0",
         )
         Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+
+        @app.middleware("http")
+        async def metrics_middleware(request, call_next):
+            started = perf_counter()
+            method = request.method
+            path = request.url.path
+            try:
+                request_size = int(request.headers.get("content-length", "0") or "0")
+            except ValueError:
+                request_size = 0
+
+            try:
+                response = await call_next(request)
+            except Exception:
+                duration = perf_counter() - started
+                app_metrics.observe_http(
+                    method=method,
+                    path=path,
+                    status_code=500,
+                    duration_seconds=duration,
+                    request_size_bytes=request_size,
+                    response_size_bytes=0,
+                    slow_threshold_seconds=self.config.slow_request_seconds,
+                )
+                raise
+
+            duration = perf_counter() - started
+            try:
+                response_size = int(response.headers.get("content-length", "0") or "0")
+            except ValueError:
+                response_size = 0
+
+            app_metrics.observe_http(
+                method=method,
+                path=path,
+                status_code=response.status_code,
+                duration_seconds=duration,
+                request_size_bytes=request_size,
+                response_size_bytes=response_size,
+                slow_threshold_seconds=self.config.slow_request_seconds,
+            )
+
+            return response
 
         @app.get("/")
         def health() -> dict:

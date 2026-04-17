@@ -4,6 +4,7 @@ from threading import Lock
 
 from psycopg import connect
 from psycopg.types.json import Json
+from src.observability import app_metrics
 
 
 class GenerationLogStore(ABC):
@@ -45,10 +46,32 @@ class PostgresLogStore(GenerationLogStore):
                         )
                     connection.commit()
                 self._table_ready = True
+                existing_records = self.count_records()
+                if existing_records is not None:
+                    app_metrics.set_db_records(existing_records)
                 return True
             except Exception:
                 logging.exception("Failed to prepare PostgreSQL logging table")
                 return False
+
+    def initialize(self) -> None:
+        self._ensure_table()
+
+    def count_records(self) -> int | None:
+        if not self._postgres_url:
+            return None
+
+        try:
+            with connect(self._postgres_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*) FROM llm_logs")
+                    count = cursor.fetchone()
+                    if count is None:
+                        return 0
+                    return int(count[0])
+        except Exception:
+            logging.exception("Failed to count records in PostgreSQL")
+            return None
 
     def save(self, prompt: str, response: dict, latency_ms: int) -> None:
         if not self._ensure_table():
@@ -65,5 +88,6 @@ class PostgresLogStore(GenerationLogStore):
                         (prompt, Json(response), latency_ms),
                     )
                 connection.commit()
+            app_metrics.record_db_write()
         except Exception:
             logging.exception("Failed to write generation log to PostgreSQL")

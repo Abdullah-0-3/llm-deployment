@@ -17,6 +17,7 @@ class AppConfig(BaseConfig):
         self.rate_limit_per_minute = self._read_rate_limit_per_minute()
         self.cache_ttl_seconds = self._read_cache_ttl_seconds()
         self.cache_prefix = self.read_env("CACHE_PREFIX", "llm:prompt") or "llm:prompt"
+        self.slow_request_seconds = self._read_slow_request_seconds()
 
     @staticmethod
     def _read_rate_limit_per_minute() -> int:
@@ -35,3 +36,12 @@ class AppConfig(BaseConfig):
         except ValueError:
             return 3600
         return max(value, 1)
+
+    @staticmethod
+    def _read_slow_request_seconds() -> float:
+        raw_value = os.getenv("SLOW_REQUEST_SECONDS", "1.0")
+        try:
+            value = float(raw_value)
+        except ValueError:
+            return 1.0
+        return max(value, 0.05)
