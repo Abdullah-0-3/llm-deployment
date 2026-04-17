@@ -3,3 +3,5 @@ uvicorn
 requests
 pydantic
 prometheus-fastapi-instrumentator
+celery
+redis

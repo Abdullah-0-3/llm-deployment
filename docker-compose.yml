@@ -1,4 +1,9 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -12,11 +17,24 @@ services:
     build: ./api
     container_name: fastapi
     depends_on:
+      - redis
       - ollama
     environment:
       - OLLAMA_URL=${OLLAMA_URL}
+      - REDIS_URL=${REDIS_URL}
       - API_KEY=${API_KEY}
       - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE}
+
+  worker:
+    build: ./api
+    container_name: celery-worker
+    command: celery -A src.celery_app.celery worker --loglevel=info --pool=solo
+    depends_on:
+      - redis
+      - ollama
+    environment:
+      - OLLAMA_URL=${OLLAMA_URL}
+      - REDIS_URL=${REDIS_URL}
 
   nginx:
     image: nginx:alpine
