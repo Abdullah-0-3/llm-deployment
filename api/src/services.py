@@ -1,14 +1,26 @@
 from celery.result import AsyncResult
+from src.cache import PromptCache
 from src.llm import LLMClient
 from src.models import ResultResponse
 
 
 class GenerationService:
-    def __init__(self, llm_client: LLMClient) -> None:
+    def __init__(self, llm_client: LLMClient, prompt_cache: PromptCache | None = None) -> None:
         self._llm_client = llm_client
+        self._prompt_cache = prompt_cache
 
     def generate_sync(self, prompt: str) -> dict:
-        return self._llm_client.generate(prompt)
+        if self._prompt_cache:
+            cached = self._prompt_cache.get(prompt)
+            if cached is not None:
+                return cached
+
+        result = self._llm_client.generate(prompt)
+
+        if self._prompt_cache:
+            self._prompt_cache.set(prompt, result)
+
+        return result
 
 
 class TaskService:

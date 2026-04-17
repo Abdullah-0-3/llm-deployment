@@ -2,6 +2,7 @@ import logging
 from fastapi import Depends, FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from src.config import AppConfig
+from src.cache import RedisPromptCache
 from src.models import PromptRequest, ResultResponse, SubmitResponse
 from src.security import APIKeyAuthenticator
 from src.rate_limit import InMemoryRateLimiter
@@ -16,8 +17,14 @@ class AppFactory:
         self.config = AppConfig()
         self.authenticator = APIKeyAuthenticator(self.config.api_key)
         self.rate_limiter = InMemoryRateLimiter(self.config.rate_limit_per_minute)
+        self.prompt_cache = RedisPromptCache(
+            redis_url=self.config.redis_url,
+            ttl_seconds=self.config.cache_ttl_seconds,
+            key_prefix=self.config.cache_prefix,
+        )
         self.generation_service = GenerationService(
-            OllamaLLMClient(ollama_url=self.config.ollama_url, model=self.config.model)
+            OllamaLLMClient(ollama_url=self.config.ollama_url, model=self.config.model),
+            prompt_cache=self.prompt_cache,
         )
         self.task_service = TaskService(celery)
 

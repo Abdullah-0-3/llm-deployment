@@ -14,6 +14,8 @@ class AppConfig(BaseConfig):
         self.api_key = self.read_env("API_KEY")
         self.model = self.read_env("OLLAMA_MODEL", "tinyllama") or "tinyllama"
         self.rate_limit_per_minute = self._read_rate_limit_per_minute()
+        self.cache_ttl_seconds = self._read_cache_ttl_seconds()
+        self.cache_prefix = self.read_env("CACHE_PREFIX", "llm:prompt") or "llm:prompt"
 
     @staticmethod
     def _read_rate_limit_per_minute() -> int:
@@ -22,4 +24,13 @@ class AppConfig(BaseConfig):
             value = int(raw_value)
         except ValueError:
             return 20
+        return max(value, 1)
+
+    @staticmethod
+    def _read_cache_ttl_seconds() -> int:
+        raw_value = os.getenv("CACHE_TTL_SECONDS", "3600")
+        try:
+            value = int(raw_value)
+        except ValueError:
+            return 3600
         return max(value, 1)
