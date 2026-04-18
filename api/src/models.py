@@ -67,3 +67,9 @@ class SessionIdItem(BaseModel):
 
 class SessionIdsResponse(BaseModel):
     sessions: list[SessionIdItem]
+
+
+class RuntimeConfigResponse(BaseModel):
+    ollama_url: str
+    llm_model: str
+    embed_model: str

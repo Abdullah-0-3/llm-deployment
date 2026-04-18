@@ -35,6 +35,12 @@ type SessionIdsResponse = {
   sessions: Array<{ session_id: string; message_count: number; last_updated: string }>;
 };
 
+type RuntimeConfigResponse = {
+  ollama_url: string;
+  llm_model: string;
+  embed_model: string;
+};
+
 const API_BASE = "/api";
 
 async function postJson<T>(path: string, apiKey: string, body: object): Promise<T> {
@@ -103,6 +109,7 @@ export default function App() {
   const [ragSources, setRagSources] = useState<Array<{ source: string; chunk_count: number; last_updated: string }>>([]);
   const [sessions, setSessions] = useState<Array<{ session_id: string; message_count: number; last_updated: string }>>([]);
   const [manageLoading, setManageLoading] = useState(false);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfigResponse | null>(null);
 
   const cleanSession = useMemo(() => sessionId.trim(), [sessionId]);
 
@@ -113,6 +120,8 @@ export default function App() {
         throw new Error("health check failed");
       }
       setHealthStatus("healthy");
+      const configPayload = await getJson<RuntimeConfigResponse>("/runtime", apiKey);
+      setRuntimeConfig(configPayload);
     } catch {
       setHealthStatus("unreachable");
     }
@@ -303,6 +312,8 @@ export default function App() {
             Knowledge & Sessions
           </button>
           <span className={`status-pill ${healthStatus}`}>API: {healthStatus}</span>
+          {runtimeConfig ? <span className="status-pill">LLM: {runtimeConfig.llm_model}</span> : null}
+          {runtimeConfig ? <span className="status-pill">Embed: {runtimeConfig.embed_model}</span> : null}
           <button className="ghost-btn" onClick={checkHealth} type="button">
             Check Health
           </button>

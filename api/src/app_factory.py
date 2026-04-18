@@ -16,6 +16,7 @@ from src.models import (
     RagSourceItem,
     RagSourcesResponse,
     ResultResponse,
+    RuntimeConfigResponse,
     SessionIdItem,
     SessionIdsResponse,
     SubmitResponse,
@@ -112,6 +113,14 @@ class AppFactory:
         @app.get("/")
         def health() -> dict:
             return {"status": "healthy"}
+
+        @app.get("/runtime", response_model=RuntimeConfigResponse)
+        def runtime(_api_key: str = Depends(self.authenticator)) -> RuntimeConfigResponse:
+            return RuntimeConfigResponse(
+                ollama_url=self.config.ollama_url,
+                llm_model=self.config.model,
+                embed_model=self.config.embed_model,
+            )
 
         @app.post("/generate")
         def generate(request_data: PromptRequest, api_key: str = Depends(self.authenticator)) -> dict:

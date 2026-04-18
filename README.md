@@ -254,11 +254,11 @@ docker compose ps
 Model-puller is disabled currently, so install models manually after containers are up:
 
 ```bash
-docker exec ollama ollama pull tinyllama
-docker exec ollama ollama pull nomic-embed-text
+docker exec ollama ollama pull "$(grep '^OLLAMA_MODEL=' .env | cut -d= -f2-)"
+docker exec ollama ollama pull "$(grep '^OLLAMA_EMBED_MODEL=' .env | cut -d= -f2-)"
 ```
 
-Use your `.env` values if you changed model names.
+The pull commands above always use your current `.env` model values.
 
 Verify installed models:
 
