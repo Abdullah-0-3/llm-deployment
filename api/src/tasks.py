@@ -1,7 +1,7 @@
 from src.config import AppConfig
 from src.cache import RedisPromptCache
-from src.llm import OllamaEmbeddingClient, OllamaLLMClient
 from src.celery_app import celery
+from src.llm import OllamaEmbeddingClient, OllamaLLMClient
 from src.services import GenerationService, RAGService
 from src.storage import PostgresLogStore
 from src.worker_metrics import worker_metrics
