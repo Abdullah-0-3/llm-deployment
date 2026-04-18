@@ -12,6 +12,14 @@ class GenerationLogStore(ABC):
     def save(self, prompt: str, response: dict, latency_ms: int) -> None:
         raise NotImplementedError
 
+    @abstractmethod
+    def save_session_message(self, session_id: str, role: str, content: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_recent_session_messages(self, session_id: str, limit: int = 10) -> list[tuple[str, str]]:
+        raise NotImplementedError
+
 
 class PostgresLogStore(GenerationLogStore):
     def __init__(self, postgres_url: str | None) -> None:
@@ -42,6 +50,23 @@ class PostgresLogStore(GenerationLogStore):
                                 latency_ms INTEGER NOT NULL,
                                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                             )
+                            """
+                        )
+                        cursor.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS session_messages (
+                                id BIGSERIAL PRIMARY KEY,
+                                session_id TEXT NOT NULL,
+                                role TEXT NOT NULL,
+                                content TEXT NOT NULL,
+                                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                            )
+                            """
+                        )
+                        cursor.execute(
+                            """
+                            CREATE INDEX IF NOT EXISTS idx_session_messages_session_created
+                            ON session_messages (session_id, created_at)
                             """
                         )
                     connection.commit()
@@ -91,3 +116,52 @@ class PostgresLogStore(GenerationLogStore):
             app_metrics.record_db_write()
         except Exception:
             logging.exception("Failed to write generation log to PostgreSQL")
+
+    def save_session_message(self, session_id: str, role: str, content: str) -> None:
+        if not self._ensure_table():
+            return
+
+        if not session_id.strip() or not content.strip():
+            return
+
+        try:
+            with connect(self._postgres_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO session_messages (session_id, role, content)
+                        VALUES (%s, %s, %s)
+                        """,
+                        (session_id.strip(), role, content),
+                    )
+                connection.commit()
+        except Exception:
+            logging.exception("Failed to write session message to PostgreSQL")
+
+    def get_recent_session_messages(self, session_id: str, limit: int = 10) -> list[tuple[str, str]]:
+        if not self._ensure_table():
+            return []
+
+        safe_limit = max(1, min(limit, 20))
+        try:
+            with connect(self._postgres_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT role, content
+                        FROM (
+                            SELECT role, content, created_at
+                            FROM session_messages
+                            WHERE session_id = %s
+                            ORDER BY created_at DESC
+                            LIMIT %s
+                        ) recent
+                        ORDER BY created_at ASC
+                        """,
+                        (session_id.strip(), safe_limit),
+                    )
+                    rows = cursor.fetchall()
+                    return [(str(row[0]), str(row[1])) for row in rows]
+        except Exception:
+            logging.exception("Failed to read session messages from PostgreSQL")
+            return []

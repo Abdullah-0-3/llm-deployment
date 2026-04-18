@@ -11,7 +11,13 @@ fi
 
 PROMPT="$*"
 
-curl -s -X POST "$API_URL" \
+RAW_RESPONSE="$(curl -s -X POST "$API_URL" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
-  --data-raw "$(printf '{"prompt":"%s"}' "${PROMPT//\"/\\\"}")"
+  --data-raw "$(printf '{"prompt":"%s"}' "${PROMPT//\"/\\\"}")")"
+
+if command -v jq >/dev/null 2>&1; then
+  echo "$RAW_RESPONSE" | jq -r '.response // .detail // ""'
+else
+  echo "$RAW_RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("response") or d.get("detail") or "")'
+fi

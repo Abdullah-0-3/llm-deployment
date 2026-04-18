@@ -99,7 +99,7 @@ class AppFactory:
                 raise HTTPException(status_code=400, detail="Prompt cannot be empty")
 
             try:
-                return self.generation_service.generate_sync(prompt)
+                return self.generation_service.generate_sync(prompt, session_id=request_data.session_id)
             except RuntimeError as exc:
                 raise HTTPException(status_code=502, detail="Failed to reach Ollama") from exc
 
@@ -110,7 +110,7 @@ class AppFactory:
             if not prompt:
                 raise HTTPException(status_code=400, detail="Prompt cannot be empty")
 
-            task = generate_with_ollama.delay(prompt)
+            task = generate_with_ollama.delay(prompt, request_data.session_id)
             return SubmitResponse(task_id=task.id, status="queued")
 
         @app.get("/result/{task_id}", response_model=ResultResponse)

@@ -12,7 +12,7 @@ worker_metrics.start()
 
 
 @celery.task(name="tasks.generate_with_ollama")
-def generate_with_ollama(prompt: str) -> dict:
+def generate_with_ollama(prompt: str, session_id: str | None = None) -> dict:
     started_at = perf_counter()
     config = AppConfig()
     client = OllamaLLMClient(ollama_url=config.ollama_url, model=config.model)
@@ -24,7 +24,7 @@ def generate_with_ollama(prompt: str) -> dict:
     log_store = PostgresLogStore(config.postgres_url)
     service = GenerationService(llm_client=client, prompt_cache=cache, log_store=log_store)
     try:
-        result = service.generate_sync(prompt, source="async")
+        result = service.generate_sync(prompt, source="async", session_id=session_id)
     except Exception:
         worker_metrics.record("tasks.generate_with_ollama", "failure", started_at)
         raise
