@@ -13,119 +13,76 @@ This README documents what is implemented so far, how the system works, and how 
 ## Architecture Workflow
 
 ```mermaid
-    flowchart TB
+flowchart LR
+  subgraph Client_Layer["Client Layer"]
+    External_App["External User Application"]
+  end
 
-    %% =========================
-    %% CLIENT LAYER
-    %% =========================
-    subgraph CLIENT["Client Layer"]
-        ExternalApp["External Application / Client"]
-    end
-
-    %% =========================
-    %% CI/CD PIPELINE
-    %% =========================
-    subgraph CICD["CI/CD Pipeline"]
-        direction LR
-        GitHubActions["GitHub Actions"]
-        ContainerRegistry["Container Registry"]
-    end
-
-    %% =========================
-    %% INFRASTRUCTURE (DOCKER COMPOSE)
-    %% =========================
-    subgraph INFRA["Application Infrastructure (Docker Compose)"]
+  subgraph Compose_Infra["Infrastructure (Docker Compose)"]
     direction TB
 
-        %% ---------- EDGE / API ----------
-        subgraph EDGE["Edge & API Layer"]
-            direction LR
-            Nginx["Reverse Proxy\n(Nginx)"]
-            FastAPI["LLM API Service\n(FastAPI)"]
-        end
-
-        %% ---------- ASYNC PROCESSING ----------
-        subgraph ASYNC["Asynchronous Processing"]
-            direction LR
-            RedisBroker["Redis (Broker)"]
-            CeleryWorker["Celery Workers"]
-        end
-
-        %% ---------- MODEL INFERENCE ----------
-        subgraph MODEL["Model Inference Layer"]
-            Ollama["Ollama Runtime"]
-        end
-
-        %% ---------- DATA LAYER ----------
-        subgraph DATA["Data & Persistence Layer"]
-            direction TB
-
-            RedisCache["Redis (Cache)"]
-
-            subgraph PG["PostgreSQL + pgvector"]
-                direction TB
-                LLMLogs["llm_logs"]
-                SessionStore["session_messages"]
-                RAGStore["rag_chunks (vector embeddings)"]
-            end
-        end
-
-        %% ---------- OBSERVABILITY ----------
-        subgraph OBS["Observability & Monitoring"]
-            direction LR
-            Prometheus["Prometheus"]
-            Grafana["Grafana Dashboards"]
-        end
+    subgraph Proxy_Layer["API and Reverse Proxy"]
+      direction LR
+      Nginx["Reverse Proxy (Nginx)"]
+      FastAPI["LLM API Service (FastAPI)"]
     end
 
-    %% =========================
-    %% CI/CD FLOW
-    %% =========================
-    GitHubActions -->|Build & Push Images| ContainerRegistry
-    ContainerRegistry -->|Deploy Services| INFRA
+    subgraph Queue_Layer["Async Queue"]
+      direction LR
+      RedisBroker["Redis Broker"]
+      CeleryWorker["Celery Worker"]
+    end
 
-    %% =========================
-    %% REQUEST FLOW
-    %% =========================
-    ExternalApp -->|HTTPS Request + API Key| Nginx
-    Nginx -->|Reverse Proxy| FastAPI
+    subgraph Model_Layer["Inference"]
+      Ollama["Ollama"]
+    end
 
-    %% =========================
-    %% SYNC PROCESSING
-    %% =========================
-    FastAPI -->|Synchronous Inference| Ollama
+    subgraph Data_Layer["Data and State"]
+      direction LR
+      RedisCache["Redis Cache"]
+      PostgreSQL["PostgreSQL + pgvector"]
+      LLMLogs["llm_logs"]
+      SessionStore["session_messages"]
+      RAGStore["rag_chunks"]
+    end
 
-    %% =========================
-    %% CACHE
-    %% =========================
-    FastAPI -->|Read / Write Cache| RedisCache
+    subgraph Obs_Layer["Observability"]
+      direction LR
+      Prometheus["Prometheus"]
+      Grafana["Grafana"]
+    end
+  end
 
-    %% =========================
-    %% ASYNC PIPELINE
-    %% =========================
-    FastAPI -->|Enqueue Task| RedisBroker
-    RedisBroker -->|Dispatch Task| CeleryWorker
-    CeleryWorker -->|Async Inference| Ollama
+  subgraph CICD["CI/CD Pipeline"]
+    GitHubActions["GitHub Actions"]
+    ContainerRegistry["Container Registry"]
+  end
 
-    %% =========================
-    %% DATA PERSISTENCE
-    %% =========================
-    FastAPI -->|Store Generation Metadata| LLMLogs
-    FastAPI -->|Session Memory (R/W)| SessionStore
-    FastAPI -->|Vector Search / Insert (RAG)| RAGStore
+  GitHubActions -->|"Build and Push Images"| ContainerRegistry
+  ContainerRegistry -->|"Deploy Compose Artifacts"| Compose_Infra
 
-    CeleryWorker -->|Store Async Results| LLMLogs
+  External_App -->|"HTTP Request + API Key"| Nginx
+  Nginx -->|"Proxy"| FastAPI
 
-    LLMLogs --> PG
-    SessionStore --> PG
-    RAGStore --> PG
+  FastAPI -->|"Sync Inference"| Ollama
+  FastAPI -->|"Cache Read/Write"| RedisCache
+  FastAPI -->|"Enqueue Async Job"| RedisBroker
+  RedisBroker -->|"Consume Job"| CeleryWorker
+  CeleryWorker -->|"Async Inference"| Ollama
 
-    %% =========================
-    %% OBSERVABILITY FLOW
-    %% =========================
-    Prometheus -->|Scrape /metrics| FastAPI
-    Prometheus -->|Scrape /metrics| CeleryWorker
-    Grafana -->|Query Metrics| Prometheus
+  FastAPI -->|"Store Generation Metadata"| LLMLogs
+  FastAPI -->|"Store/Read Session Memory"| SessionStore
+  FastAPI -->|"RAG Vector Search/Insert"| RAGStore
+
+  LLMLogs --> PostgreSQL
+  SessionStore --> PostgreSQL
+  RAGStore --> PostgreSQL
+
+  CeleryWorker -->|"Store Async Results/Logs"| LLMLogs
+
+  Prometheus -->|"Scrape /metrics"| FastAPI
+  Prometheus -->|"Scrape /metrics"| CeleryWorker
+  Grafana -->|"Query Metrics"| Prometheus
 ```
 
 ## What Has Been Implemented?
