@@ -1,4 +1,4 @@
-# Simple LLM Deployment (LLMOps Learning Project)
+# LLMOps - LLM Deployment
 
 A production-style LLMOps project built step-by-step with FastAPI, Celery, Redis, PostgreSQL/pgvector, Ollama, Nginx, Prometheus, and Grafana.
 

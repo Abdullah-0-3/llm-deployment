@@ -49,9 +49,13 @@ class PostgresLogStore(GenerationLogStore):
 
             try:
                 with connect(self._postgres_url) as connection:
-                    register_vector(connection)
                     with connection.cursor() as cursor:
                         cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                    connection.commit()
+
+                    register_vector(connection)
+
+                    with connection.cursor() as cursor:
                         cursor.execute(
                             """
                             CREATE TABLE IF NOT EXISTS llm_logs (
@@ -117,7 +121,6 @@ class PostgresLogStore(GenerationLogStore):
 
         try:
             with connect(self._postgres_url) as connection:
-                register_vector(connection)
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT COUNT(*) FROM llm_logs")
                     count = cursor.fetchone()
@@ -134,7 +137,6 @@ class PostgresLogStore(GenerationLogStore):
 
         try:
             with connect(self._postgres_url) as connection:
-                register_vector(connection)
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
@@ -157,7 +159,6 @@ class PostgresLogStore(GenerationLogStore):
 
         try:
             with connect(self._postgres_url) as connection:
-                register_vector(connection)
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
@@ -177,7 +178,6 @@ class PostgresLogStore(GenerationLogStore):
         safe_limit = max(1, min(limit, 20))
         try:
             with connect(self._postgres_url) as connection:
-                register_vector(connection)
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
