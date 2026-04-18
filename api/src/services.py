@@ -1,10 +1,77 @@
 from celery.result import AsyncResult
 from src.cache import PromptCache
-from src.llm import LLMClient
+from src.llm import EmbeddingClient, LLMClient
 from src.models import ResultResponse
 from src.storage import GenerationLogStore
 from src.observability import app_metrics
 from time import perf_counter
+
+
+class RAGService:
+    def __init__(
+        self,
+        embedding_client: EmbeddingClient,
+        store: GenerationLogStore,
+        top_k: int = 3,
+        chunk_size: int = 1000,
+    ) -> None:
+        self._embedding_client = embedding_client
+        self._store = store
+        self._top_k = top_k
+        self._chunk_size = chunk_size
+
+    def ingest_text(self, text: str, source: str = "manual") -> int:
+        chunks = self._chunk_text(text)
+        if not chunks:
+            return 0
+
+        embeddings = [self._embedding_client.embed(chunk) for chunk in chunks]
+        self._store.save_rag_chunks(source=source, chunks=chunks, embeddings=embeddings)
+        return len(chunks)
+
+    def retrieve_context(self, query: str) -> str:
+        query_embedding = self._embedding_client.embed(query)
+        matches = self._store.search_rag_chunks(query_embedding, limit=self._top_k)
+        if not matches:
+            return ""
+
+        lines = ["Relevant context:", ""]
+        for source, content in matches:
+            lines.append(f"Source: {source}")
+            lines.append(content)
+            lines.append("")
+        return "\n".join(lines).strip()
+
+    def _chunk_text(self, text: str) -> list[str]:
+        normalized = " ".join(text.split())
+        if not normalized:
+            return []
+
+        chunks: list[str] = []
+        current = ""
+        for part in normalized.split("."):
+            sentence = part.strip()
+            if not sentence:
+                continue
+            sentence = f"{sentence}."
+            candidate = sentence if not current else f"{current} {sentence}"
+            if len(candidate) <= self._chunk_size:
+                current = candidate
+                continue
+
+            if current:
+                chunks.append(current.strip())
+
+            if len(sentence) > self._chunk_size:
+                chunks.extend(sentence[i : i + self._chunk_size].strip() for i in range(0, len(sentence), self._chunk_size) if sentence[i : i + self._chunk_size].strip())
+                current = ""
+            else:
+                current = sentence
+
+        if current:
+            chunks.append(current.strip())
+
+        return chunks
 
 
 class GenerationService:
@@ -13,21 +80,29 @@ class GenerationService:
         llm_client: LLMClient,
         prompt_cache: PromptCache | None = None,
         log_store: GenerationLogStore | None = None,
+        rag_service: RAGService | None = None,
     ) -> None:
         self._llm_client = llm_client
         self._prompt_cache = prompt_cache
         self._log_store = log_store
+        self._rag_service = rag_service
 
     def generate_sync(self, prompt: str, source: str = "sync", session_id: str | None = None) -> dict:
         started_at = perf_counter()
         normalized_session_id = (session_id or "").strip() or None
         effective_prompt = prompt
+        rag_context = ""
 
         if normalized_session_id and self._log_store:
             history = self._log_store.get_recent_session_messages(normalized_session_id)
             effective_prompt = self._build_prompt_with_history(prompt, history)
 
-        use_cache = self._prompt_cache is not None and normalized_session_id is None
+        if not normalized_session_id and self._rag_service:
+            rag_context = self._rag_service.retrieve_context(prompt)
+            if rag_context:
+                effective_prompt = self._build_prompt_with_rag(prompt, rag_context)
+
+        use_cache = self._prompt_cache is not None and normalized_session_id is None and not rag_context
 
         if use_cache and self._prompt_cache:
             cached = self._prompt_cache.get(prompt)
@@ -68,6 +143,17 @@ class GenerationService:
         lines.append(f"User: {prompt}")
         lines.append("Assistant:")
         return "\n".join(lines)
+
+    @staticmethod
+    def _build_prompt_with_rag(prompt: str, rag_context: str) -> str:
+        return "\n\n".join(
+            [
+                "Use the retrieved context below if it helps answer the question.",
+                rag_context,
+                f"User: {prompt}",
+                "Assistant:",
+            ]
+        )
 
     def _save_session_turn(self, session_id: str | None, prompt: str, result: dict) -> None:
         if not session_id or not self._log_store:

@@ -1,8 +1,8 @@
 from src.config import AppConfig
 from src.cache import RedisPromptCache
-from src.llm import OllamaLLMClient
+from src.llm import OllamaEmbeddingClient, OllamaLLMClient
 from src.celery_app import celery
-from src.services import GenerationService
+from src.services import GenerationService, RAGService
 from src.storage import PostgresLogStore
 from src.worker_metrics import worker_metrics
 from time import perf_counter
@@ -22,7 +22,13 @@ def generate_with_ollama(prompt: str, session_id: str | None = None) -> dict:
         key_prefix=config.cache_prefix,
     )
     log_store = PostgresLogStore(config.postgres_url)
-    service = GenerationService(llm_client=client, prompt_cache=cache, log_store=log_store)
+    rag_service = RAGService(
+        OllamaEmbeddingClient(ollama_url=config.ollama_url, model=config.embed_model),
+        store=log_store,
+        top_k=config.rag_top_k,
+        chunk_size=config.rag_chunk_size,
+    )
+    service = GenerationService(llm_client=client, prompt_cache=cache, log_store=log_store, rag_service=rag_service)
     try:
         result = service.generate_sync(prompt, source="async", session_id=session_id)
     except Exception:

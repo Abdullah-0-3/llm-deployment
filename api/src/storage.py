@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import logging
 from threading import Lock
 
+from pgvector.psycopg import Vector, register_vector
 from psycopg import connect
 from psycopg.types.json import Json
 from src.observability import app_metrics
@@ -18,6 +19,14 @@ class GenerationLogStore(ABC):
 
     @abstractmethod
     def get_recent_session_messages(self, session_id: str, limit: int = 10) -> list[tuple[str, str]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def save_rag_chunks(self, source: str, chunks: list[str], embeddings: list[list[float]]) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def search_rag_chunks(self, query_embedding: list[float], limit: int = 3) -> list[tuple[str, str]]:
         raise NotImplementedError
 
 
@@ -40,7 +49,9 @@ class PostgresLogStore(GenerationLogStore):
 
             try:
                 with connect(self._postgres_url) as connection:
+                    register_vector(connection)
                     with connection.cursor() as cursor:
+                        cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
                         cursor.execute(
                             """
                             CREATE TABLE IF NOT EXISTS llm_logs (
@@ -69,6 +80,18 @@ class PostgresLogStore(GenerationLogStore):
                             ON session_messages (session_id, created_at)
                             """
                         )
+                        cursor.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS rag_chunks (
+                                id BIGSERIAL PRIMARY KEY,
+                                source TEXT NOT NULL,
+                                chunk_index INTEGER NOT NULL,
+                                content TEXT NOT NULL,
+                                embedding vector(768) NOT NULL,
+                                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                            )
+                            """
+                        )
                     connection.commit()
                 self._table_ready = True
                 existing_records = self.count_records()
@@ -88,6 +111,7 @@ class PostgresLogStore(GenerationLogStore):
 
         try:
             with connect(self._postgres_url) as connection:
+                register_vector(connection)
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT COUNT(*) FROM llm_logs")
                     count = cursor.fetchone()
@@ -104,6 +128,7 @@ class PostgresLogStore(GenerationLogStore):
 
         try:
             with connect(self._postgres_url) as connection:
+                register_vector(connection)
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
@@ -126,6 +151,7 @@ class PostgresLogStore(GenerationLogStore):
 
         try:
             with connect(self._postgres_url) as connection:
+                register_vector(connection)
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
@@ -145,6 +171,7 @@ class PostgresLogStore(GenerationLogStore):
         safe_limit = max(1, min(limit, 20))
         try:
             with connect(self._postgres_url) as connection:
+                register_vector(connection)
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
@@ -164,4 +191,51 @@ class PostgresLogStore(GenerationLogStore):
                     return [(str(row[0]), str(row[1])) for row in rows]
         except Exception:
             logging.exception("Failed to read session messages from PostgreSQL")
+            return []
+
+    def save_rag_chunks(self, source: str, chunks: list[str], embeddings: list[list[float]]) -> None:
+        if not self._ensure_table():
+            return
+
+        if len(chunks) != len(embeddings):
+            raise ValueError("Chunks and embeddings must have the same length")
+
+        try:
+            with connect(self._postgres_url) as connection:
+                register_vector(connection)
+                with connection.cursor() as cursor:
+                    for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                        cursor.execute(
+                            """
+                            INSERT INTO rag_chunks (source, chunk_index, content, embedding)
+                            VALUES (%s, %s, %s, %s)
+                            """,
+                            (source, index, chunk, Vector(embedding)),
+                        )
+                connection.commit()
+        except Exception:
+            logging.exception("Failed to write RAG chunks to PostgreSQL")
+
+    def search_rag_chunks(self, query_embedding: list[float], limit: int = 3) -> list[tuple[str, str]]:
+        if not self._ensure_table():
+            return []
+
+        safe_limit = max(1, min(limit, 10))
+        try:
+            with connect(self._postgres_url) as connection:
+                register_vector(connection)
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT source, content
+                        FROM rag_chunks
+                        ORDER BY embedding <=> %s
+                        LIMIT %s
+                        """,
+                        (Vector(query_embedding), safe_limit),
+                    )
+                    rows = cursor.fetchall()
+                    return [(str(row[0]), str(row[1])) for row in rows]
+        except Exception:
+            logging.exception("Failed to search RAG chunks in PostgreSQL")
             return []

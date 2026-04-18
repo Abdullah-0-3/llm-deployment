@@ -7,3 +7,4 @@ prometheus-client
 celery
 redis
 psycopg[binary]
+pgvector

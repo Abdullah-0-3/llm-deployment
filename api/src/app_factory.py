@@ -5,11 +5,11 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from src.config import AppConfig
 from src.cache import RedisPromptCache
 from src.observability import app_metrics
-from src.models import PromptRequest, ResultResponse, SubmitResponse
+from src.models import IngestRequest, IngestResponse, PromptRequest, ResultResponse, SubmitResponse
 from src.security import APIKeyAuthenticator
 from src.rate_limit import InMemoryRateLimiter
-from src.llm import OllamaLLMClient
-from src.services import GenerationService, TaskService
+from src.llm import OllamaEmbeddingClient, OllamaLLMClient
+from src.services import GenerationService, RAGService, TaskService
 from src.storage import PostgresLogStore
 from src.celery_app import celery
 from src.tasks import generate_with_ollama
@@ -27,10 +27,17 @@ class AppFactory:
         )
         self.log_store = PostgresLogStore(self.config.postgres_url)
         self.log_store.initialize()
+        self.rag_service = RAGService(
+            OllamaEmbeddingClient(ollama_url=self.config.ollama_url, model=self.config.embed_model),
+            store=self.log_store,
+            top_k=self.config.rag_top_k,
+            chunk_size=self.config.rag_chunk_size,
+        )
         self.generation_service = GenerationService(
             OllamaLLMClient(ollama_url=self.config.ollama_url, model=self.config.model),
             prompt_cache=self.prompt_cache,
             log_store=self.log_store,
+            rag_service=self.rag_service,
         )
         self.task_service = TaskService(celery)
 
@@ -102,6 +109,16 @@ class AppFactory:
                 return self.generation_service.generate_sync(prompt, session_id=request_data.session_id)
             except RuntimeError as exc:
                 raise HTTPException(status_code=502, detail="Failed to reach Ollama") from exc
+
+        @app.post("/ingest", response_model=IngestResponse)
+        def ingest(request_data: IngestRequest, api_key: str = Depends(self.authenticator)) -> IngestResponse:
+            self.rate_limiter.enforce(api_key)
+            text = request_data.text.strip()
+            if not text:
+                raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+            chunks_stored = self.rag_service.ingest_text(text, source=request_data.source.strip() or "manual")
+            return IngestResponse(source=request_data.source.strip() or "manual", chunks_stored=chunks_stored)
 
         @app.post("/submit", response_model=SubmitResponse)
         def submit(request_data: PromptRequest, api_key: str = Depends(self.authenticator)) -> SubmitResponse:

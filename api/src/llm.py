@@ -9,6 +9,12 @@ class LLMClient(ABC):
         raise NotImplementedError
 
 
+class EmbeddingClient(ABC):
+    @abstractmethod
+    def embed(self, text: str) -> list[float]:
+        raise NotImplementedError
+
+
 class OllamaLLMClient(LLMClient):
     def __init__(self, ollama_url: str, model: str = "tinyllama", timeout_seconds: int = 60) -> None:
         self._ollama_url = ollama_url
@@ -36,3 +42,37 @@ class OllamaLLMClient(LLMClient):
         except ValueError as exc:
             logging.exception("Ollama returned a non-JSON response")
             raise RuntimeError("Invalid response from Ollama") from exc
+
+
+class OllamaEmbeddingClient(EmbeddingClient):
+    def __init__(self, ollama_url: str, model: str = "nomic-embed-text", timeout_seconds: int = 60) -> None:
+        self._ollama_url = ollama_url
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+
+    def embed(self, text: str) -> list[float]:
+        try:
+            response = requests.post(
+                f"{self._ollama_url}/api/embeddings",
+                json={
+                    "model": self._model,
+                    "prompt": text,
+                },
+                timeout=self._timeout_seconds,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            logging.exception("Failed to call Ollama embeddings API")
+            raise RuntimeError("Failed to reach Ollama") from exc
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            logging.exception("Ollama embeddings API returned a non-JSON response")
+            raise RuntimeError("Invalid response from Ollama") from exc
+
+        embedding = payload.get("embedding")
+        if not isinstance(embedding, list):
+            raise RuntimeError("Invalid embeddings response from Ollama")
+
+        return [float(value) for value in embedding]

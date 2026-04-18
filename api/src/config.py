@@ -14,10 +14,13 @@ class AppConfig(BaseConfig):
         self.postgres_url = self.read_env("POSTGRES_URL")
         self.api_key = self.read_env("API_KEY")
         self.model = self.read_env("OLLAMA_MODEL", "tinyllama") or "tinyllama"
+        self.embed_model = self.read_env("OLLAMA_EMBED_MODEL", "nomic-embed-text") or "nomic-embed-text"
         self.rate_limit_per_minute = self._read_rate_limit_per_minute()
         self.cache_ttl_seconds = self._read_cache_ttl_seconds()
         self.cache_prefix = self.read_env("CACHE_PREFIX", "llm:prompt") or "llm:prompt"
         self.slow_request_seconds = self._read_slow_request_seconds()
+        self.rag_top_k = self._read_rag_top_k()
+        self.rag_chunk_size = self._read_rag_chunk_size()
 
     @staticmethod
     def _read_rate_limit_per_minute() -> int:
@@ -45,3 +48,21 @@ class AppConfig(BaseConfig):
         except ValueError:
             return 1.0
         return max(value, 0.05)
+
+    @staticmethod
+    def _read_rag_top_k() -> int:
+        raw_value = os.getenv("RAG_TOP_K", "3")
+        try:
+            value = int(raw_value)
+        except ValueError:
+            return 3
+        return max(value, 1)
+
+    @staticmethod
+    def _read_rag_chunk_size() -> int:
+        raw_value = os.getenv("RAG_CHUNK_SIZE", "1000")
+        try:
+            value = int(raw_value)
+        except ValueError:
+            return 1000
+        return max(value, 200)
