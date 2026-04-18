@@ -21,6 +21,7 @@ class AppConfig(BaseConfig):
         self.slow_request_seconds = self._read_slow_request_seconds()
         self.rag_top_k = self._read_rag_top_k()
         self.rag_chunk_size = self._read_rag_chunk_size()
+        self.rag_chunk_overlap = self._read_rag_chunk_overlap(self.rag_chunk_size)
 
     @staticmethod
     def _read_rate_limit_per_minute() -> int:
@@ -66,3 +67,14 @@ class AppConfig(BaseConfig):
         except ValueError:
             return 1000
         return max(value, 200)
+
+    @staticmethod
+    def _read_rag_chunk_overlap(chunk_size: int) -> int:
+        raw_value = os.getenv("RAG_CHUNK_OVERLAP", "150")
+        try:
+            value = int(raw_value)
+        except ValueError:
+            value = 150
+
+        max_overlap = max(chunk_size - 50, 0)
+        return max(0, min(value, max_overlap))

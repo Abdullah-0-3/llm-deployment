@@ -1,4 +1,5 @@
 from celery.result import AsyncResult
+import re
 from src.cache import PromptCache
 from src.llm import EmbeddingClient, LLMClient
 from src.models import ResultResponse
@@ -14,11 +15,13 @@ class RAGService:
         store: GenerationLogStore,
         top_k: int = 3,
         chunk_size: int = 1000,
+        chunk_overlap: int = 150,
     ) -> None:
         self._embedding_client = embedding_client
         self._store = store
         self._top_k = top_k
-        self._chunk_size = chunk_size
+        self._chunk_size = max(chunk_size, 200)
+        self._chunk_overlap = max(0, min(chunk_overlap, self._chunk_size - 50))
 
     def ingest_text(self, text: str, source: str = "manual") -> int:
         chunks = self._chunk_text(text)
@@ -30,46 +33,62 @@ class RAGService:
         return len(chunks)
 
     def retrieve_context(self, query: str) -> str:
-        query_embedding = self._embedding_client.embed(query)
-        matches = self._store.search_rag_chunks(query_embedding, limit=self._top_k)
+        matches = self.search(query, limit=self._top_k)
         if not matches:
             return ""
 
         lines = ["Relevant context:", ""]
-        for source, content in matches:
+        for source, content, _distance in matches:
             lines.append(f"Source: {source}")
             lines.append(content)
             lines.append("")
         return "\n".join(lines).strip()
+
+    def search(self, query: str, limit: int | None = None) -> list[tuple[str, str, float]]:
+        query_embedding = self._embedding_client.embed(query)
+        resolved_limit = self._top_k if limit is None else limit
+        return self._store.search_rag_chunks(query_embedding, limit=resolved_limit)
 
     def _chunk_text(self, text: str) -> list[str]:
         normalized = " ".join(text.split())
         if not normalized:
             return []
 
+        if len(normalized) <= self._chunk_size:
+            return [normalized]
+
         chunks: list[str] = []
-        current = ""
-        for part in normalized.split("."):
-            sentence = part.strip()
-            if not sentence:
-                continue
-            sentence = f"{sentence}."
-            candidate = sentence if not current else f"{current} {sentence}"
-            if len(candidate) <= self._chunk_size:
-                current = candidate
-                continue
+        start = 0
+        text_length = len(normalized)
 
-            if current:
-                chunks.append(current.strip())
+        while start < text_length:
+            tentative_end = min(start + self._chunk_size, text_length)
+            end = tentative_end
 
-            if len(sentence) > self._chunk_size:
-                chunks.extend(sentence[i : i + self._chunk_size].strip() for i in range(0, len(sentence), self._chunk_size) if sentence[i : i + self._chunk_size].strip())
-                current = ""
-            else:
-                current = sentence
+            if tentative_end < text_length:
+                window = normalized[start:tentative_end]
+                best_cut = -1
+                for pattern in (r"\. ", r"\? ", r"! "):
+                    match = None
+                    for match in re.finditer(pattern, window):
+                        pass
+                    if match:
+                        best_cut = max(best_cut, match.end())
 
-        if current:
-            chunks.append(current.strip())
+                if best_cut > self._chunk_size // 2:
+                    end = start + best_cut
+
+            chunk = normalized[start:end].strip()
+            if chunk and (not chunks or chunk != chunks[-1]):
+                chunks.append(chunk)
+
+            if end >= text_length:
+                break
+
+            next_start = end - self._chunk_overlap
+            if next_start <= start:
+                next_start = end
+            start = next_start
 
         return chunks
 

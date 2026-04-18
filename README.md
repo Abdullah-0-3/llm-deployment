@@ -125,6 +125,9 @@ flowchart LR
 - Embeddings via Ollama embedding model (`OLLAMA_EMBED_MODEL`)
 - pgvector storage (`rag_chunks` table)
 - Ingestion endpoint: `POST /ingest`
+- Debug retrieval endpoint: `POST /rag/search`
+- Source-level dedup on ingest (re-ingesting same `source` replaces old chunks)
+- Overlap chunking (`RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`)
 - Retrieval before generation for non-session requests
 
 ## Simple Architecture
@@ -214,6 +217,11 @@ cp .env.example .env
 - `API_KEY`
 - `OLLAMA_MODEL`
 - `OLLAMA_EMBED_MODEL`
+
+Optional RAG tuning:
+- `RAG_TOP_K`
+- `RAG_CHUNK_SIZE`
+- `RAG_CHUNK_OVERLAP`
 
 Defaults already exist for local development.
 
@@ -313,6 +321,15 @@ Ask related question:
 
 ```bash
 ./run.sh "Are apples healthy?"
+```
+
+Inspect retrieved chunks (debug):
+
+```bash
+curl -s -X POST http://localhost/rag/search \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: adminLLM" \
+  --data-raw '{"query":"Are apples healthy?","limit":3}'
 ```
 
 ## Observability

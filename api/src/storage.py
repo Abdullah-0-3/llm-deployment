@@ -26,7 +26,7 @@ class GenerationLogStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def search_rag_chunks(self, query_embedding: list[float], limit: int = 3) -> list[tuple[str, str]]:
+    def search_rag_chunks(self, query_embedding: list[float], limit: int = 3) -> list[tuple[str, str, float]]:
         raise NotImplementedError
 
 
@@ -90,6 +90,12 @@ class PostgresLogStore(GenerationLogStore):
                                 embedding vector(768) NOT NULL,
                                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                             )
+                            """
+                        )
+                        cursor.execute(
+                            """
+                            CREATE INDEX IF NOT EXISTS idx_rag_chunks_source
+                            ON rag_chunks (source)
                             """
                         )
                     connection.commit()
@@ -200,23 +206,26 @@ class PostgresLogStore(GenerationLogStore):
         if len(chunks) != len(embeddings):
             raise ValueError("Chunks and embeddings must have the same length")
 
+        clean_source = source.strip() or "manual"
+
         try:
             with connect(self._postgres_url) as connection:
                 register_vector(connection)
                 with connection.cursor() as cursor:
+                    cursor.execute("DELETE FROM rag_chunks WHERE source = %s", (clean_source,))
                     for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
                         cursor.execute(
                             """
                             INSERT INTO rag_chunks (source, chunk_index, content, embedding)
                             VALUES (%s, %s, %s, %s)
                             """,
-                            (source, index, chunk, Vector(embedding)),
+                            (clean_source, index, chunk, Vector(embedding)),
                         )
                 connection.commit()
         except Exception:
             logging.exception("Failed to write RAG chunks to PostgreSQL")
 
-    def search_rag_chunks(self, query_embedding: list[float], limit: int = 3) -> list[tuple[str, str]]:
+    def search_rag_chunks(self, query_embedding: list[float], limit: int = 3) -> list[tuple[str, str, float]]:
         if not self._ensure_table():
             return []
 
@@ -227,15 +236,15 @@ class PostgresLogStore(GenerationLogStore):
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT source, content
+                        SELECT source, content, (embedding <=> %s) AS distance
                         FROM rag_chunks
-                        ORDER BY embedding <=> %s
+                        ORDER BY distance
                         LIMIT %s
                         """,
                         (Vector(query_embedding), safe_limit),
                     )
                     rows = cursor.fetchall()
-                    return [(str(row[0]), str(row[1])) for row in rows]
+                    return [(str(row[0]), str(row[1]), float(row[2])) for row in rows]
         except Exception:
             logging.exception("Failed to search RAG chunks in PostgreSQL")
             return []

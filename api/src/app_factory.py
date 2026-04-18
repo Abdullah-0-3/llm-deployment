@@ -5,7 +5,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from src.config import AppConfig
 from src.cache import RedisPromptCache
 from src.observability import app_metrics
-from src.models import IngestRequest, IngestResponse, PromptRequest, ResultResponse, SubmitResponse
+from src.models import IngestRequest, IngestResponse, PromptRequest, RagSearchMatch, RagSearchRequest, RagSearchResponse, ResultResponse, SubmitResponse
 from src.security import APIKeyAuthenticator
 from src.rate_limit import InMemoryRateLimiter
 from src.llm import OllamaEmbeddingClient, OllamaLLMClient
@@ -32,6 +32,7 @@ class AppFactory:
             store=self.log_store,
             top_k=self.config.rag_top_k,
             chunk_size=self.config.rag_chunk_size,
+            chunk_overlap=self.config.rag_chunk_overlap,
         )
         self.generation_service = GenerationService(
             OllamaLLMClient(ollama_url=self.config.ollama_url, model=self.config.model),
@@ -119,6 +120,19 @@ class AppFactory:
 
             chunks_stored = self.rag_service.ingest_text(text, source=request_data.source.strip() or "manual")
             return IngestResponse(source=request_data.source.strip() or "manual", chunks_stored=chunks_stored)
+
+        @app.post("/rag/search", response_model=RagSearchResponse)
+        def rag_search(request_data: RagSearchRequest, api_key: str = Depends(self.authenticator)) -> RagSearchResponse:
+            self.rate_limiter.enforce(api_key)
+            query = request_data.query.strip()
+            if not query:
+                raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+            matches = [
+                RagSearchMatch(source=source, content=content, distance=distance)
+                for source, content, distance in self.rag_service.search(query, limit=request_data.limit)
+            ]
+            return RagSearchResponse(query=query, matches=matches)
 
         @app.post("/submit", response_model=SubmitResponse)
         def submit(request_data: PromptRequest, api_key: str = Depends(self.authenticator)) -> SubmitResponse:

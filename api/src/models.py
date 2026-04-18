@@ -11,6 +11,11 @@ class IngestRequest(BaseModel):
     source: str = Field(default="manual", max_length=200)
 
 
+class RagSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=2000)
+    limit: int = Field(default=3, ge=1, le=10)
+
+
 class SubmitResponse(BaseModel):
     task_id: str
     status: str
@@ -26,3 +31,14 @@ class ResultResponse(BaseModel):
 class IngestResponse(BaseModel):
     source: str
     chunks_stored: int
+
+
+class RagSearchMatch(BaseModel):
+    source: str
+    content: str
+    distance: float
+
+
+class RagSearchResponse(BaseModel):
+    query: str
+    matches: list[RagSearchMatch]

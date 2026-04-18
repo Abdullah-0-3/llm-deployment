@@ -27,6 +27,7 @@ def generate_with_ollama(prompt: str, session_id: str | None = None) -> dict:
         store=log_store,
         top_k=config.rag_top_k,
         chunk_size=config.rag_chunk_size,
+        chunk_overlap=config.rag_chunk_overlap,
     )
     service = GenerationService(llm_client=client, prompt_cache=cache, log_store=log_store, rag_service=rag_service)
     try:
