@@ -128,7 +128,7 @@ class GenerationService:
             if cached is not None:
                 app_metrics.record_llm_cache_hit(source)
                 app_metrics.record_llm_generation(source, "cached", perf_counter() - started_at)
-                self._log_generation(prompt, cached, started_at)
+                self._log_generation(prompt, cached, started_at, input_tokens=0, output_tokens=0)
                 self._save_session_turn(normalized_session_id, prompt, cached)
                 return cached
 
@@ -141,11 +141,14 @@ class GenerationService:
             app_metrics.record_llm_generation(source, "error", perf_counter() - started_at)
             raise
 
+        input_tokens, output_tokens = self._extract_tokens(result)
+        app_metrics.record_llm_tokens(source, input_tokens, output_tokens)
+
         if use_cache and self._prompt_cache:
             self._prompt_cache.set(prompt, result)
 
         app_metrics.record_llm_generation(source, "success", perf_counter() - started_at)
-        self._log_generation(prompt, result, started_at)
+        self._log_generation(prompt, result, started_at, input_tokens=input_tokens, output_tokens=output_tokens)
         self._save_session_turn(normalized_session_id, prompt, result)
 
         return result
@@ -183,12 +186,37 @@ class GenerationService:
         if assistant_text:
             self._log_store.save_session_message(session_id=session_id, role="assistant", content=assistant_text)
 
-    def _log_generation(self, prompt: str, response: dict, started_at: float) -> None:
+    @staticmethod
+    def _extract_tokens(response: dict) -> tuple[int, int]:
+        raw_input = response.get("prompt_eval_count", 0)
+        raw_output = response.get("eval_count", 0)
+
+        try:
+            input_tokens = int(raw_input)
+        except (TypeError, ValueError):
+            input_tokens = 0
+
+        try:
+            output_tokens = int(raw_output)
+        except (TypeError, ValueError):
+            output_tokens = 0
+
+        return max(input_tokens, 0), max(output_tokens, 0)
+
+    def _log_generation(self, prompt: str, response: dict, started_at: float, input_tokens: int, output_tokens: int) -> None:
         if not self._log_store:
             return
 
         latency_ms = int((perf_counter() - started_at) * 1000)
-        self._log_store.save(prompt=prompt, response=response, latency_ms=latency_ms)
+        total_tokens = max(input_tokens, 0) + max(output_tokens, 0)
+        self._log_store.save(
+            prompt=prompt,
+            response=response,
+            latency_ms=latency_ms,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+        )
 
 
 class TaskService:

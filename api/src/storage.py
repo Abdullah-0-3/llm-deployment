@@ -10,7 +10,15 @@ from src.observability import app_metrics
 
 class GenerationLogStore(ABC):
     @abstractmethod
-    def save(self, prompt: str, response: dict, latency_ms: int) -> None:
+    def save(
+        self,
+        prompt: str,
+        response: dict,
+        latency_ms: int,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        total_tokens: int = 0,
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -63,10 +71,16 @@ class PostgresLogStore(GenerationLogStore):
                                 prompt TEXT NOT NULL,
                                 response JSONB NOT NULL,
                                 latency_ms INTEGER NOT NULL,
+                                input_tokens INTEGER NOT NULL DEFAULT 0,
+                                output_tokens INTEGER NOT NULL DEFAULT 0,
+                                total_tokens INTEGER NOT NULL DEFAULT 0,
                                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                             )
                             """
                         )
+                        cursor.execute("ALTER TABLE llm_logs ADD COLUMN IF NOT EXISTS input_tokens INTEGER NOT NULL DEFAULT 0")
+                        cursor.execute("ALTER TABLE llm_logs ADD COLUMN IF NOT EXISTS output_tokens INTEGER NOT NULL DEFAULT 0")
+                        cursor.execute("ALTER TABLE llm_logs ADD COLUMN IF NOT EXISTS total_tokens INTEGER NOT NULL DEFAULT 0")
                         cursor.execute(
                             """
                             CREATE TABLE IF NOT EXISTS session_messages (
@@ -131,7 +145,15 @@ class PostgresLogStore(GenerationLogStore):
             logging.exception("Failed to count records in PostgreSQL")
             return None
 
-    def save(self, prompt: str, response: dict, latency_ms: int) -> None:
+    def save(
+        self,
+        prompt: str,
+        response: dict,
+        latency_ms: int,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        total_tokens: int = 0,
+    ) -> None:
         if not self._ensure_table():
             return
 
@@ -140,10 +162,17 @@ class PostgresLogStore(GenerationLogStore):
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        INSERT INTO llm_logs (prompt, response, latency_ms)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO llm_logs (prompt, response, latency_ms, input_tokens, output_tokens, total_tokens)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         """,
-                        (prompt, Json(response), latency_ms),
+                        (
+                            prompt,
+                            Json(response),
+                            latency_ms,
+                            max(input_tokens, 0),
+                            max(output_tokens, 0),
+                            max(total_tokens, 0),
+                        ),
                     )
                 connection.commit()
             app_metrics.record_db_write()

@@ -362,6 +362,122 @@
         "defaults": { "unit": "reqps", "decimals": 2 },
         "overrides": []
       }
+    },
+    {
+      "type": "row",
+      "title": "Token Usage Metrics",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 }
+    },
+    {
+      "type": "stat",
+      "title": "Input Tokens / min",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 40 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_input_tokens_total[1h])) * 60",
+          "legendFormat": "input tokens/min",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 2 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "stat",
+      "title": "Output Tokens / min",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 40 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_output_tokens_total[1h])) * 60",
+          "legendFormat": "output tokens/min",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 2 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "stat",
+      "title": "Total Tokens / min",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 40 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_total_tokens_total[1h])) * 60",
+          "legendFormat": "total tokens/min",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 2 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "stat",
+      "title": "Avg Tokens / Request (1h)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 40 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_tokens_per_request_sum[1h])) / clamp_min(sum(rate(llm_tokens_per_request_count[1h])), 1)",
+          "legendFormat": "avg tokens/request",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 1 },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "type": "timeseries",
+      "title": "Token Throughput by Source (tokens/min)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 47 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_input_tokens_total[1h])) by (source) * 60",
+          "legendFormat": "input/min {{source}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(llm_output_tokens_total[1h])) by (source) * 60",
+          "legendFormat": "output/min {{source}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 2 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Total Tokens Over Time",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 47 },
+      "targets": [
+        {
+          "expr": "sum(increase(llm_total_tokens_total[1h]))",
+          "legendFormat": "tokens in last 1h",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0 },
+        "overrides": []
+      }
     }
   ],
   "refresh": "30s",
@@ -383,6 +499,6 @@
   "timezone": "browser",
   "title": "LLM Ops Overview",
   "uid": "llm-ops-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
