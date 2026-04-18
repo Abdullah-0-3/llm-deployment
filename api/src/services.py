@@ -49,6 +49,15 @@ class RAGService:
         resolved_limit = self._top_k if limit is None else limit
         return self._store.search_rag_chunks(query_embedding, limit=resolved_limit)
 
+    def list_sources(self) -> list[tuple[str, int, str]]:
+        return self._store.list_rag_sources()
+
+    def delete_source(self, source: str) -> int:
+        return self._store.delete_rag_source(source)
+
+    def list_session_ids(self, limit: int = 100) -> list[tuple[str, int, str]]:
+        return self._store.list_session_ids(limit=limit)
+
     def _chunk_text(self, text: str) -> list[str]:
         normalized = " ".join(text.split())
         if not normalized:

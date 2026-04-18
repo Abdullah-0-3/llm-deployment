@@ -5,7 +5,21 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from src.config import AppConfig
 from src.cache import RedisPromptCache
 from src.observability import app_metrics
-from src.models import IngestRequest, IngestResponse, PromptRequest, RagSearchMatch, RagSearchRequest, RagSearchResponse, ResultResponse, SubmitResponse
+from src.models import (
+    DeleteRagSourceResponse,
+    IngestRequest,
+    IngestResponse,
+    PromptRequest,
+    RagSearchMatch,
+    RagSearchRequest,
+    RagSearchResponse,
+    RagSourceItem,
+    RagSourcesResponse,
+    ResultResponse,
+    SessionIdItem,
+    SessionIdsResponse,
+    SubmitResponse,
+)
 from src.security import APIKeyAuthenticator
 from src.rate_limit import InMemoryRateLimiter
 from src.llm import OllamaEmbeddingClient, OllamaLLMClient
@@ -133,6 +147,34 @@ class AppFactory:
                 for source, content, distance in self.rag_service.search(query, limit=request_data.limit)
             ]
             return RagSearchResponse(query=query, matches=matches)
+
+        @app.get("/rag/sources", response_model=RagSourcesResponse)
+        def rag_sources(_api_key: str = Depends(self.authenticator)) -> RagSourcesResponse:
+            items = [
+                RagSourceItem(source=source, chunk_count=chunk_count, last_updated=last_updated)
+                for source, chunk_count, last_updated in self.rag_service.list_sources()
+            ]
+            return RagSourcesResponse(sources=items)
+
+        @app.delete("/rag/sources/{source}", response_model=DeleteRagSourceResponse)
+        def delete_rag_source(source: str, _api_key: str = Depends(self.authenticator)) -> DeleteRagSourceResponse:
+            clean_source = source.strip()
+            if not clean_source:
+                raise HTTPException(status_code=400, detail="Source cannot be empty")
+
+            deleted = self.rag_service.delete_source(clean_source)
+            if deleted == 0:
+                raise HTTPException(status_code=404, detail="Source not found")
+
+            return DeleteRagSourceResponse(source=clean_source, deleted_chunks=deleted)
+
+        @app.get("/sessions", response_model=SessionIdsResponse)
+        def sessions(_api_key: str = Depends(self.authenticator)) -> SessionIdsResponse:
+            items = [
+                SessionIdItem(session_id=session_id, message_count=message_count, last_updated=last_updated)
+                for session_id, message_count, last_updated in self.rag_service.list_session_ids(limit=200)
+            ]
+            return SessionIdsResponse(sessions=items)
 
         @app.post("/submit", response_model=SubmitResponse)
         def submit(request_data: PromptRequest, api_key: str = Depends(self.authenticator)) -> SubmitResponse:
