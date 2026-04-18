@@ -13,97 +13,76 @@ This README documents what is implemented so far, how the system works, and how 
 ## Architecture Workflow
 
 ```mermaid
-graph LR
-    subgraph Client Layer [Client Layer]
-        External_App[External User Application]:::client
+flowchart LR
+  subgraph Client_Layer["Client Layer"]
+    External_App["External User Application"]
+  end
+
+  subgraph Compose_Infra["Infrastructure (Docker Compose)"]
+    direction TB
+
+    subgraph Proxy_Layer["API and Reverse Proxy"]
+      direction LR
+      Nginx["Reverse Proxy (Nginx)"]
+      FastAPI["LLM API Service (FastAPI)"]
     end
 
-    subgraph Infrastructure_Compose [Infrastructure (Docker Compose)]
-        direction TB
-
-        subgraph Observability [Observability Stack]
-            direction RL
-            Prometheus[Metrics Collector (Prometheus)]:::monitoring
-            Grafana[Dashboard (Grafana)]:::monitoring
-        end
-
-        subgraph Proxy_Layer [API & Reverse Proxy Layer]
-            direction TB
-            Nginx[Reverse Proxy (Nginx)]:::compute
-            FastAPI[LLM API Service (FastAPI)]:::compute
-        end
-
-        subgraph Queue_Layer [Queue Layer]
-            RedisBroker[Message Broker (Redis)]:::datastore
-        end
-
-        subgraph Processing_Layer [Async Processing Layer]
-            CeleryWorker[LLM Worker (Celery)]:::compute
-        end
-
-        subgraph Model_Layer [Inference Layer]
-            Ollama[Inference Service (Ollama)]:::inference
-        end
-
-        subgraph Data_Layer [Data & State Layer]
-            RedisCache[Response Cache (Redis)]:::datastore
-            PostgreSQL[Metadata DB (PostgreSQL)]:::datastore
-        end
-
+    subgraph Queue_Layer["Async Queue"]
+      direction LR
+      RedisBroker["Redis Broker"]
+      CeleryWorker["Celery Worker"]
     end
 
-    subgraph CICD [CI/CD Pipeline]
-        GitHubActions[CI/CD Workflow (GitHub Actions)]:::cicd
-        ContainerRegistry[Container Registry]:::cicd
+    subgraph Model_Layer["Inference"]
+      Ollama["Ollama"]
     end
 
-    %% -- Connections --
-    %% 1. CI/CD Flow
-    GitHubActions -->|Build & Push Images| ContainerRegistry
-    ContainerRegistry -->|Deploy (docker compose pull)| Infrastructure_Compose
+    subgraph Data_Layer["Data and State"]
+      direction LR
+      RedisCache["Redis Cache"]
+      PostgreSQL["PostgreSQL + pgvector"]
+      LLMLogs["llm_logs"]
+      SessionStore["session_messages"]
+      RAGStore["rag_chunks"]
+    end
 
-    %% 2. External Traffic (Sync)
-    External_App -->|HTTPS Request (API Key)| Nginx
-    Nginx -->|HTTP Proxy| FastAPI
-    
-    %% 3. API - Database (Sync)
-    FastAPI -->|Store Metadata (Prompts/Responses)| PostgreSQL
+    subgraph Obs_Layer["Observability"]
+      direction LR
+      Prometheus["Prometheus"]
+      Grafana["Grafana"]
+    end
+  end
 
-    %% 4. API - Caching (Sync Request/Response)
-    FastAPI -.->|Check/Set Cache| RedisCache
+  subgraph CICD["CI/CD Pipeline"]
+    GitHubActions["GitHub Actions"]
+    ContainerRegistry["Container Registry"]
+  end
 
-    %% 5. Async Workflow
-    FastAPI -->|Enqueue Async Job| RedisBroker:::sync_traffic
-    RedisBroker -->|Consume Job| CeleryWorker:::async_traffic
-    CeleryWorker -->|Inference Request (e.g., /api/chat)| Ollama
-    Ollama -->|Generate Response| CeleryWorker
-    CeleryWorker -->|Update Status/Results| PostgreSQL
+  GitHubActions -->|"Build and Push Images"| ContainerRegistry
+  ContainerRegistry -->|"Deploy Compose Artifacts"| Compose_Infra
 
-    %% 6. (Optional) Ollama Model Volume
-    %% Ollama -->|Mounts /root/.ollama| ModelVolume
+  External_App -->|"HTTP Request + API Key"| Nginx
+  Nginx -->|"Proxy"| FastAPI
 
-    %% 7. Observability (Pull/Scrape Metrics)
-    Prometheus -->|Scrape Metrics (/metrics)| Nginx
-    Prometheus -->|Scrape Metrics (/metrics)| FastAPI
-    Prometheus -->|Scrape Metrics (/metrics)| CeleryWorker
-    Prometheus -->|Scrape Metrics (/api/stats)| Ollama
-    Grafana -->|Query Metrics| Prometheus
+  FastAPI -->|"Sync Inference"| Ollama
+  FastAPI -->|"Cache Read/Write"| RedisCache
+  FastAPI -->|"Enqueue Async Job"| RedisBroker
+  RedisBroker -->|"Consume Job"| CeleryWorker
+  CeleryWorker -->|"Async Inference"| Ollama
 
-    %% --- Optional Kubernetes Dotted Boundary ---
-    linkStyle 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19 stroke-width:2px;
+  FastAPI -->|"Store Generation Metadata"| LLMLogs
+  FastAPI -->|"Store/Read Session Memory"| SessionStore
+  FastAPI -->|"RAG Vector Search/Insert"| RAGStore
 
-    classDef client fill:#f9f,stroke:#333,stroke-width:2px,rx:5,ry:5;
-    classDef compute fill:#bbf,stroke:#333,stroke-width:2px,rx:5,ry:5;
-    classDef datastore fill:#dfd,stroke:#333,stroke-width:2px,rx:5,ry:5;
-    classDef inference fill:#fbd,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5,rx:5,ry:5;
-    classDef cicd fill:#ffb,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5,rx:5,ry:5;
-    classDef monitoring fill:#fdb,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5,rx:5,ry:5;
-    
-    classDef sync_traffic stroke:#0c0,stroke-width:2px;
-    classDef async_traffic stroke:#00c,stroke-width:2px;
+  LLMLogs --> PostgreSQL
+  SessionStore --> PostgreSQL
+  RAGStore --> PostgreSQL
 
-    %% Add Legend (conceptual)
-    %% Note[Legend: \n Green Arrow: Sync Request/Response \n Blue Arrow: Async Job Flow]:::legend
+  CeleryWorker -->|"Store Async Results/Logs"| LLMLogs
+
+  Prometheus -->|"Scrape /metrics"| FastAPI
+  Prometheus -->|"Scrape /metrics"| CeleryWorker
+  Grafana -->|"Query Metrics"| Prometheus
 ```
 
 ## What Has Been Implemented?
