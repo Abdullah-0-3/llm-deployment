@@ -24,31 +24,6 @@ services:
       - ollama_data:/data
     restart: unless-stopped
 
-  # ollama-pull:
-  #   image: ollama/ollama:latest
-  #   container_name: ollama-pull
-  #   depends_on:
-  #     - ollama
-  #   entrypoint: ["/bin/sh", "-c"]
-  #   command: |
-  #     echo "Waiting for Ollama to be accessible..."
-  #     for i in {1..30}; do
-  #       if ollama list > /dev/null 2>&1; then
-  #         echo "Ollama is ready! Pulling model..."
-  #         ollama pull ${OLLAMA_MODEL:-tinyllama}
-  #         echo "Model pull completed!"
-  #         exit 0
-  #       fi
-  #       echo "Attempt $i/30 - waiting..."
-  #       sleep 2
-  #     done
-  #     echo "ERROR: Ollama not accessible after 60 seconds"
-  #     exit 1
-  #   environment:
-  #     - OLLAMA_MODEL=${OLLAMA_MODEL:-tinyllama}
-  #     - OLLAMA_HOST=http://ollama:11434
-  #   restart: "no"
-
   api:
     build: ./api
     container_name: fastapi
