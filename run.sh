@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_URL="${API_URL:-http://localhost/generate}"
+API_URL="${API_URL:-http://localhost/api/generate}"
 API_KEY="${API_KEY:-adminLLM}"
 
 if [ $# -eq 0 ]; then
