@@ -14,6 +14,62 @@ This README documents what is implemented so far, how the system works, and how 
 
 ```mermaid
 flowchart LR
+  U[User / Client] --> F[Frontend Nginx + React :80]
+
+  F --> A[FastAPI API /api/*]
+    A --> O[Ollama]
+    A --> R[(Redis)]
+    A --> P[(PostgreSQL + pgvector)]
+    A --> C[Celery Broker/Backend on Redis]
+
+    C --> W[Celery Worker]
+    W --> O
+    W --> P
+    W --> R
+
+    A --> M1[/metrics/]
+    W --> M2[Worker Metrics :8001/metrics]
+
+    PR[Prometheus] --> M1
+    PR --> M2
+    G
+```
+
+## Request Flow (Sync + RAG + Session)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API as FastAPI
+    participant Redis
+    participant PG as PostgreSQL/pgvector
+    participant Ollama
+
+    User->>API: POST /generate (prompt, optional session_id)
+
+    alt session_id provided
+        API->>PG: Load recent session messages
+        API->>API: Build prompt with conversation history
+        API->>Ollama: Generate answer
+        API->>PG: Save user + assistant messages
+    else no session_id
+        API->>PG: Vector search (RAG) using embedded query
+        API->>API: Build prompt with retrieved context (if any)
+        API->>Redis: Cache lookup (only when no RAG context)
+        alt cache hit
+            Redis-->>API: Cached response
+        else cache miss
+            API->>Ollama: Generate answer
+            API->>Redis: Save cache
+        end
+    end
+
+    API->>PG: Save generation log
+    API-->>User: JSON response
+```
+
+<!-- ```mermaid
+flowchart LR
   subgraph Client_Layer["Client Layer"]
     External_App["External User Application"]
   end
@@ -83,7 +139,7 @@ flowchart LR
   Prometheus -->|"Scrape /metrics"| FastAPI
   Prometheus -->|"Scrape /metrics"| CeleryWorker
   Grafana -->|"Query Metrics"| Prometheus
-```
+``` -->
 
 ## What Has Been Implemented?
 
@@ -141,63 +197,6 @@ flowchart LR
   - RAG search debug
   - Health check
 
-## Simple Architecture
-
-```mermaid
-flowchart LR
-  U[User / Client] --> F[Frontend Nginx + React :80]
-
-  F --> A[FastAPI API /api/*]
-    A --> O[Ollama]
-    A --> R[(Redis)]
-    A --> P[(PostgreSQL + pgvector)]
-    A --> C[Celery Broker/Backend on Redis]
-
-    C --> W[Celery Worker]
-    W --> O
-    W --> P
-    W --> R
-
-    A --> M1[/metrics/]
-    W --> M2[Worker Metrics :8001/metrics]
-
-    PR[Prometheus] --> M1
-    PR --> M2
-    G[Grafana] --> PR
-```
-
-## Request Flow (Sync + RAG + Session)
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant API as FastAPI
-    participant Redis
-    participant PG as PostgreSQL/pgvector
-    participant Ollama
-
-    User->>API: POST /generate (prompt, optional session_id)
-
-    alt session_id provided
-        API->>PG: Load recent session messages
-        API->>API: Build prompt with conversation history
-        API->>Ollama: Generate answer
-        API->>PG: Save user + assistant messages
-    else no session_id
-        API->>PG: Vector search (RAG) using embedded query
-        API->>API: Build prompt with retrieved context (if any)
-        API->>Redis: Cache lookup (only when no RAG context)
-        alt cache hit
-            Redis-->>API: Cached response
-        else cache miss
-            API->>Ollama: Generate answer
-            API->>Redis: Save cache
-        end
-    end
-
-    API->>PG: Save generation log
-    API-->>User: JSON response
-```
 
 ## Project Structure
 
