@@ -37,6 +37,18 @@ class GenerationLogStore(ABC):
     def search_rag_chunks(self, query_embedding: list[float], limit: int = 3) -> list[tuple[str, str, float]]:
         raise NotImplementedError
 
+    @abstractmethod
+    def list_rag_sources(self) -> list[tuple[str, int, str]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_rag_source(self, source: str) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_session_ids(self, limit: int = 100) -> list[tuple[str, int, str]]:
+        raise NotImplementedError
+
 
 class PostgresLogStore(GenerationLogStore):
     def __init__(self, postgres_url: str | None) -> None:
@@ -276,4 +288,82 @@ class PostgresLogStore(GenerationLogStore):
                     return [(str(row[0]), str(row[1]), float(row[2])) for row in rows]
         except Exception:
             logging.exception("Failed to search RAG chunks in PostgreSQL")
+            return []
+
+    def list_rag_sources(self) -> list[tuple[str, int, str]]:
+        if not self._ensure_table():
+            return []
+
+        try:
+            with connect(self._postgres_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT source, COUNT(*) AS chunk_count, MAX(created_at) AS last_updated
+                        FROM rag_chunks
+                        GROUP BY source
+                        ORDER BY last_updated DESC
+                        """
+                    )
+                    rows = cursor.fetchall()
+                    return [
+                        (
+                            str(row[0]),
+                            int(row[1]),
+                            row[2].isoformat() if row[2] is not None else "",
+                        )
+                        for row in rows
+                    ]
+        except Exception:
+            logging.exception("Failed to list RAG sources from PostgreSQL")
+            return []
+
+    def delete_rag_source(self, source: str) -> int:
+        if not self._ensure_table():
+            return 0
+
+        clean_source = source.strip()
+        if not clean_source:
+            return 0
+
+        try:
+            with connect(self._postgres_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("DELETE FROM rag_chunks WHERE source = %s", (clean_source,))
+                    deleted = cursor.rowcount
+                connection.commit()
+                return max(int(deleted or 0), 0)
+        except Exception:
+            logging.exception("Failed to delete RAG source from PostgreSQL")
+            return 0
+
+    def list_session_ids(self, limit: int = 100) -> list[tuple[str, int, str]]:
+        if not self._ensure_table():
+            return []
+
+        safe_limit = max(1, min(limit, 500))
+        try:
+            with connect(self._postgres_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT session_id, COUNT(*) AS message_count, MAX(created_at) AS last_updated
+                        FROM session_messages
+                        GROUP BY session_id
+                        ORDER BY last_updated DESC
+                        LIMIT %s
+                        """,
+                        (safe_limit,),
+                    )
+                    rows = cursor.fetchall()
+                    return [
+                        (
+                            str(row[0]),
+                            int(row[1]),
+                            row[2].isoformat() if row[2] is not None else "",
+                        )
+                        for row in rows
+                    ]
+        except Exception:
+            logging.exception("Failed to list session ids from PostgreSQL")
             return []

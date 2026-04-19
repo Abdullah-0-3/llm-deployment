@@ -1,8 +1,8 @@
 # LLMOps - LLM Deployment
 
-A production-style LLMOps project built step-by-step with FastAPI, Celery, Redis, PostgreSQL/pgvector, Ollama, Nginx, Prometheus, and Grafana.
+A production-style LLMOps project built step-by-step with FastAPI, Celery, Redis, PostgreSQL/pgvector, Ollama, React, Nginx, Prometheus, and Grafana.
 
-This README documents what is implemented so far, how the system works, and how to run it (including manual model installation, since model-puller is disabled).
+This README documents what is implemented so far, how the system works, and how to run it.
 
 ## Architecture
 <p align="center">
@@ -14,6 +14,62 @@ This README documents what is implemented so far, how the system works, and how 
 
 ```mermaid
 flowchart LR
+  U[User / Client] --> F[Frontend Nginx + React :80]
+
+  F --> A[FastAPI API /api/*]
+    A --> O[Ollama]
+    A --> R[(Redis)]
+    A --> P[(PostgreSQL + pgvector)]
+    A --> C[Celery Broker/Backend on Redis]
+
+    C --> W[Celery Worker]
+    W --> O
+    W --> P
+    W --> R
+
+    A --> M1[/metrics/]
+    W --> M2[Worker Metrics :8001/metrics]
+
+    PR[Prometheus] --> M1
+    PR --> M2
+    G
+```
+
+## Request Flow (Sync + RAG + Session)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API as FastAPI
+    participant Redis
+    participant PG as PostgreSQL/pgvector
+    participant Ollama
+
+    User->>API: POST /generate (prompt, optional session_id)
+
+    alt session_id provided
+        API->>PG: Load recent session messages
+        API->>API: Build prompt with conversation history
+        API->>Ollama: Generate answer
+        API->>PG: Save user + assistant messages
+    else no session_id
+        API->>PG: Vector search (RAG) using embedded query
+        API->>API: Build prompt with retrieved context (if any)
+        API->>Redis: Cache lookup (only when no RAG context)
+        alt cache hit
+            Redis-->>API: Cached response
+        else cache miss
+            API->>Ollama: Generate answer
+            API->>Redis: Save cache
+        end
+    end
+
+    API->>PG: Save generation log
+    API-->>User: JSON response
+```
+
+<!-- ```mermaid
+flowchart LR
   subgraph Client_Layer["Client Layer"]
     External_App["External User Application"]
   end
@@ -21,9 +77,9 @@ flowchart LR
   subgraph Compose_Infra["Infrastructure (Docker Compose)"]
     direction TB
 
-    subgraph Proxy_Layer["API and Reverse Proxy"]
+    subgraph Proxy_Layer["Frontend and API"]
       direction LR
-      Nginx["Reverse Proxy (Nginx)"]
+      FrontendNginx["Frontend Nginx + React UI"]
       FastAPI["LLM API Service (FastAPI)"]
     end
 
@@ -61,8 +117,8 @@ flowchart LR
   GitHubActions -->|"Build and Push Images"| ContainerRegistry
   ContainerRegistry -->|"Deploy Compose Artifacts"| Compose_Infra
 
-  External_App -->|"HTTP Request + API Key"| Nginx
-  Nginx -->|"Proxy"| FastAPI
+  External_App -->|"HTTP Request + API Key"| FrontendNginx
+  FrontendNginx -->|"Proxy /api"| FastAPI
 
   FastAPI -->|"Sync Inference"| Ollama
   FastAPI -->|"Cache Read/Write"| RedisCache
@@ -83,7 +139,7 @@ flowchart LR
   Prometheus -->|"Scrape /metrics"| FastAPI
   Prometheus -->|"Scrape /metrics"| CeleryWorker
   Grafana -->|"Query Metrics"| Prometheus
-```
+``` -->
 
 ## What Has Been Implemented?
 
@@ -130,68 +186,23 @@ flowchart LR
 - Overlap chunking (`RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`)
 - Retrieval before generation for non-session requests
 
-## Simple Architecture
+### 8) Frontend UI System
+- React + TypeScript single-page UI (`frontend/`)
+- Frontend Nginx reverse-proxy for backend API under `/api/*`
+- Production multistage frontend Docker build (Node build stage + Nginx runtime stage)
+- UI tools included:
+  - Sync generation
+  - Async submit/result
+  - RAG ingest
+  - RAG search debug
+  - Health check
 
-```mermaid
-flowchart LR
-    U[User / Client] --> N[Nginx :80]
-
-    N --> A[FastAPI API]
-    A --> O[Ollama]
-    A --> R[(Redis)]
-    A --> P[(PostgreSQL + pgvector)]
-    A --> C[Celery Broker/Backend on Redis]
-
-    C --> W[Celery Worker]
-    W --> O
-    W --> P
-    W --> R
-
-    A --> M1[/metrics/]
-    W --> M2[Worker Metrics :8001/metrics]
-
-    PR[Prometheus] --> M1
-    PR --> M2
-    G[Grafana] --> PR
-```
-
-## Request Flow (Sync + RAG + Session)
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant API as FastAPI
-    participant Redis
-    participant PG as PostgreSQL/pgvector
-    participant Ollama
-
-    User->>API: POST /generate (prompt, optional session_id)
-
-    alt session_id provided
-        API->>PG: Load recent session messages
-        API->>API: Build prompt with conversation history
-        API->>Ollama: Generate answer
-        API->>PG: Save user + assistant messages
-    else no session_id
-        API->>PG: Vector search (RAG) using embedded query
-        API->>API: Build prompt with retrieved context (if any)
-        API->>Redis: Cache lookup (only when no RAG context)
-        alt cache hit
-            Redis-->>API: Cached response
-        else cache miss
-            API->>Ollama: Generate answer
-            API->>Redis: Save cache
-        end
-    end
-
-    API->>PG: Save generation log
-    API-->>User: JSON response
-```
 
 ## Project Structure
 
 - `docker-compose.yml` - full stack orchestration
 - `api/` - FastAPI app + worker code
+- `frontend/` - React UI + frontend nginx runtime config
 - `api/src/app_factory.py` - routes and dependency wiring
 - `api/src/services.py` - generation, session memory, and RAG service logic
 - `api/src/storage.py` - PostgreSQL + pgvector persistence
@@ -242,11 +253,11 @@ docker compose ps
 Model-puller is disabled currently, so install models manually after containers are up:
 
 ```bash
-docker exec ollama ollama pull tinyllama
-docker exec ollama ollama pull nomic-embed-text
+docker exec ollama ollama pull "$(grep '^OLLAMA_MODEL=' .env | cut -d= -f2-)"
+docker exec ollama ollama pull "$(grep '^OLLAMA_EMBED_MODEL=' .env | cut -d= -f2-)"
 ```
 
-Use your `.env` values if you changed model names.
+The pull commands above always use your current `.env` model values.
 
 Verify installed models:
 
@@ -256,16 +267,22 @@ docker exec ollama ollama list
 
 ## Run and Test
 
+Frontend UI entrypoint:
+
+```bash
+http://localhost
+```
+
 ### Health
 
 ```bash
-curl -s http://localhost/
+curl -s http://localhost/api/
 ```
 
 ### Sync generation
 
 ```bash
-curl -s -X POST http://localhost/generate \
+curl -s -X POST http://localhost/api/generate \
   -H "Content-Type: application/json" \
   -H "X-API-Key: adminLLM" \
   --data-raw '{"prompt":"Is apple healthy?"}'
@@ -277,10 +294,24 @@ curl -s -X POST http://localhost/generate \
 ./run.sh "Is apple healthy?"
 ```
 
+### Full smoke tests
+
+Run the root smoke test script after the stack is up and models are pulled:
+
+```bash
+bash ./tests.sh
+```
+
+Optional overrides:
+
+```bash
+API_KEY=adminLLM BASE_URL=http://localhost bash ./tests.sh
+```
+
 ### Async generation
 
 ```bash
-curl -s -X POST http://localhost/submit \
+curl -s -X POST http://localhost/api/submit \
   -H "Content-Type: application/json" \
   -H "X-API-Key: adminLLM" \
   --data-raw '{"prompt":"Explain caching in one paragraph"}'
@@ -289,18 +320,18 @@ curl -s -X POST http://localhost/submit \
 Use returned `task_id`:
 
 ```bash
-curl -s -H "X-API-Key: adminLLM" http://localhost/result/<task_id>
+curl -s -H "X-API-Key: adminLLM" http://localhost/api/result/<task_id>
 ```
 
 ### Session memory test
 
 ```bash
-curl -s -X POST http://localhost/generate \
+curl -s -X POST http://localhost/api/generate \
   -H "Content-Type: application/json" \
   -H "X-API-Key: adminLLM" \
   --data-raw '{"prompt":"My name is Alex","session_id":"demo-1"}'
 
-curl -s -X POST http://localhost/generate \
+curl -s -X POST http://localhost/api/generate \
   -H "Content-Type: application/json" \
   -H "X-API-Key: adminLLM" \
   --data-raw '{"prompt":"What is my name?","session_id":"demo-1"}'
@@ -311,7 +342,7 @@ curl -s -X POST http://localhost/generate \
 Ingest knowledge:
 
 ```bash
-curl -s -X POST http://localhost/ingest \
+curl -s -X POST http://localhost/api/ingest \
   -H "Content-Type: application/json" \
   -H "X-API-Key: adminLLM" \
   --data-raw '{"text":"Apples are rich in fiber and vitamin C.","source":"notes"}'
@@ -326,7 +357,7 @@ Ask related question:
 Inspect retrieved chunks (debug):
 
 ```bash
-curl -s -X POST http://localhost/rag/search \
+curl -s -X POST http://localhost/api/rag/search \
   -H "Content-Type: application/json" \
   -H "X-API-Key: adminLLM" \
   --data-raw '{"query":"Are apples healthy?","limit":3}'
@@ -334,9 +365,12 @@ curl -s -X POST http://localhost/rag/search \
 
 ## Observability
 
-- API metrics: `http://localhost/metrics`
+- API metrics: `http://localhost/api/metrics`
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
+
+Frontend UI:
+- App: `http://localhost`
 
 Note: If Grafana login seems stale, reset persistent data once:
 
@@ -379,8 +413,7 @@ docker compose exec postgres psql -U llmops -d llmops -c "SELECT id, source, lef
 
 ## Next Roadmap Items (Not Yet Implemented)
 
-From your plan, these are still pending:
-- 8) React (UI)
+Current roadmap items still pending:
 - 9) CI/CD Pipelines (GitHub Actions)
 - 10) Model Abstraction Layer
 - 11) Kubernetes Deployment

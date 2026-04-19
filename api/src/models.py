@@ -42,3 +42,34 @@ class RagSearchMatch(BaseModel):
 class RagSearchResponse(BaseModel):
     query: str
     matches: list[RagSearchMatch]
+
+
+class RagSourceItem(BaseModel):
+    source: str
+    chunk_count: int
+    last_updated: str
+
+
+class RagSourcesResponse(BaseModel):
+    sources: list[RagSourceItem]
+
+
+class DeleteRagSourceResponse(BaseModel):
+    source: str
+    deleted_chunks: int
+
+
+class SessionIdItem(BaseModel):
+    session_id: str
+    message_count: int
+    last_updated: str
+
+
+class SessionIdsResponse(BaseModel):
+    sessions: list[SessionIdItem]
+
+
+class RuntimeConfigResponse(BaseModel):
+    ollama_url: str
+    llm_model: str
+    embed_model: str
